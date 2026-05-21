@@ -1,6 +1,5 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 using Xunit;
 
 namespace Ryn.Core.Tests;
@@ -33,10 +32,6 @@ public sealed class RynApplicationBuilderTests
     {
         var options = new RynOptions { Title = "DI Test" };
         var builder = RynApplication.CreateBuilder(options);
-        builder.ConfigureServices(services =>
-        {
-            services.AddSingleton(Substitute.For<IRynWindow>());
-        });
 
         await using var app = builder.Build();
 
@@ -51,12 +46,18 @@ public sealed class RynApplicationBuilderTests
         builder.ConfigureServices(services =>
         {
             services.AddSingleton<ITestService, TestService>();
-            services.AddSingleton(Substitute.For<IRynWindow>());
         });
 
         await using var app = builder.Build();
 
         app.Services.GetService<ITestService>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Options_DefaultApplicationId()
+    {
+        var options = new RynOptions();
+        options.ApplicationId.Should().Be("com.ryn.app");
     }
 
     private interface ITestService;

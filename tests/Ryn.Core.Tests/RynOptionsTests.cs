@@ -10,6 +10,7 @@ public sealed class RynOptionsTests
     {
         var options = new RynOptions();
 
+        options.ApplicationId.Should().Be("com.ryn.app");
         options.Title.Should().Be("Ryn Application");
         options.Width.Should().Be(800);
         options.Height.Should().Be(600);
