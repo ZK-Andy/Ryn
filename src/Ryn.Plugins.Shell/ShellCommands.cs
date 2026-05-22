@@ -33,7 +33,7 @@ public static class ShellCommands
         if (!string.IsNullOrEmpty(argsJson) && argsJson != "{}")
         {
             // Parse JSON array of strings
-            var argsArray = JsonSerializer.Deserialize<string[]>(argsJson);
+            var argsArray = JsonSerializer.Deserialize(argsJson, ShellJsonContext.Default.StringArray);
             if (argsArray is not null)
                 args = string.Join(' ', argsArray.Select(a => a.Contains(' ', StringComparison.Ordinal) ? $"\"{a}\"" : a));
         }
@@ -73,6 +73,7 @@ public static class ShellCommands
 
 internal record ProcessOutput(string Stdout, string Stderr, int ExitCode);
 
+[System.Text.Json.Serialization.JsonSerializable(typeof(string[]))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ProcessOutput))]
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(PropertyNamingPolicy = System.Text.Json.Serialization.JsonKnownNamingPolicy.CamelCase)]
 internal partial class ShellJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

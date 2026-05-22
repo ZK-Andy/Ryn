@@ -13,34 +13,31 @@ internal static class PathValidator
             ? Path.GetFullPath(path)
             : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, path));
 
-        // Check for path traversal
-        if (path.Contains("..", StringComparison.Ordinal))
-        {
-            // Re-resolve without the .. to see if it escapes
-            var segments = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (segments.Any(s => s == ".."))
-            {
-                // Verify the resolved path is still within an allowed directory
-                // (the check below handles this)
-            }
-        }
-
         var options = _options;
         if (options is null || options.AllowedPaths.Count == 0)
         {
-            var appDir = AppContext.BaseDirectory;
-            if (!fullPath.StartsWith(appDir, StringComparison.OrdinalIgnoreCase))
+            // Default: restrict to app directory
+            if (!IsWithin(fullPath, AppContext.BaseDirectory))
                 throw new UnauthorizedAccessException($"Access denied: path '{path}' is outside the application directory");
             return fullPath;
         }
 
         foreach (var allowed in options.AllowedPaths)
         {
-            var allowedFull = Path.GetFullPath(allowed);
-            if (fullPath.StartsWith(allowedFull, StringComparison.OrdinalIgnoreCase))
+            if (IsWithin(fullPath, allowed))
                 return fullPath;
         }
 
         throw new UnauthorizedAccessException($"Access denied: path '{path}' is not within any allowed directory");
+    }
+
+    private static bool IsWithin(string fullPath, string directory)
+    {
+        // Normalize both to remove trailing slashes, then compare with separator
+        var normalizedDir = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedPath = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        return normalizedPath.Equals(normalizedDir, StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.StartsWith(normalizedDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 }
