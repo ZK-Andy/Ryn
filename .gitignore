@@ -61,7 +61,7 @@ build/native/
 **/runtimes/**/native/*.so
 !**/runtimes/**/native/.gitkeep
 
-## Claude
+## Local dev notes
 CLAUDE.md
 
 ## Secrets
