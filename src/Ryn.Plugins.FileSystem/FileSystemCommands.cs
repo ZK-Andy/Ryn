@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Ryn.Ipc;
 
 namespace Ryn.Plugins.FileSystem;
@@ -50,21 +51,19 @@ public static class FileSystemCommands
     public static string ReadDir(string path)
     {
         var resolved = PathValidator.Resolve(path);
-        var entries = new List<object>();
+        var entries = new List<FileEntry>();
 
         foreach (var entry in new DirectoryInfo(resolved).EnumerateFileSystemInfos())
         {
-            entries.Add(new
-            {
-                name = entry.Name,
-                path = entry.FullName,
-                isDirectory = entry is DirectoryInfo,
-                size = entry is FileInfo fi ? fi.Length : 0,
-                modified = entry.LastWriteTimeUtc.ToString("O", CultureInfo.InvariantCulture),
-            });
+            entries.Add(new FileEntry(
+                entry.Name,
+                entry.FullName,
+                entry is DirectoryInfo,
+                entry is FileInfo fi ? fi.Length : 0,
+                entry.LastWriteTimeUtc.ToString("O", CultureInfo.InvariantCulture)));
         }
 
-        return JsonSerializer.Serialize(entries);
+        return JsonSerializer.Serialize(entries, FsJsonContext.Default.ListFileEntry);
     }
 
     [RynCommand("fs.stat")]
@@ -74,17 +73,23 @@ public static class FileSystemCommands
         var info = new FileInfo(resolved);
         var isDir = Directory.Exists(resolved);
 
-        var stat = new
-        {
-            name = info.Name,
-            path = info.FullName,
-            isDirectory = isDir,
-            size = isDir ? 0 : info.Length,
-            created = info.CreationTimeUtc.ToString("O", CultureInfo.InvariantCulture),
-            modified = info.LastWriteTimeUtc.ToString("O", CultureInfo.InvariantCulture),
-            accessed = info.LastAccessTimeUtc.ToString("O", CultureInfo.InvariantCulture),
-        };
+        var stat = new FileStat(
+            info.Name,
+            info.FullName,
+            isDir,
+            isDir ? 0 : info.Length,
+            info.CreationTimeUtc.ToString("O", CultureInfo.InvariantCulture),
+            info.LastWriteTimeUtc.ToString("O", CultureInfo.InvariantCulture),
+            info.LastAccessTimeUtc.ToString("O", CultureInfo.InvariantCulture));
 
-        return JsonSerializer.Serialize(stat);
+        return JsonSerializer.Serialize(stat, FsJsonContext.Default.FileStat);
     }
 }
+
+internal record FileEntry(string Name, string Path, bool IsDirectory, long Size, string Modified);
+internal record FileStat(string Name, string Path, bool IsDirectory, long Size, string Created, string Modified, string Accessed);
+
+[JsonSerializable(typeof(List<FileEntry>))]
+[JsonSerializable(typeof(FileStat))]
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+internal partial class FsJsonContext : JsonSerializerContext;

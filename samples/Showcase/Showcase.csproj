@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
     <NoWarn>CA2007;CA1515;CA1062;IL2026;IL3050</NoWarn>
   </PropertyGroup>
 
@@ -17,7 +18,8 @@
     <ProjectReference Include="..\..\src\Ryn.Core\Ryn.Core.csproj" />
     <ProjectReference Include="..\..\src\Ryn.Ipc\Ryn.Ipc.csproj" />
     <ProjectReference Include="..\..\src\Ryn.Ipc.Generator\Ryn.Ipc.Generator.csproj"
-                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false"
+                      PrivateAssets="all" ExcludeAssets="runtime" />
     <ProjectReference Include="..\..\src\Ryn.Plugins.FileSystem\Ryn.Plugins.FileSystem.csproj" />
     <ProjectReference Include="..\..\src\Ryn.Plugins.Clipboard\Ryn.Plugins.Clipboard.csproj" />
     <ProjectReference Include="..\..\src\Ryn.Plugins.Shell\Ryn.Plugins.Shell.csproj" />

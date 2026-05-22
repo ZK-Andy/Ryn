@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Ryn.Ipc;
 
 namespace Showcase;
@@ -10,17 +11,15 @@ public static class ShowcaseCommands
     [RynCommand("app.sysinfo")]
     public static string GetSystemInfo()
     {
-        var info = new
-        {
-            os = RuntimeInformation.OSDescription,
-            arch = RuntimeInformation.OSArchitecture.ToString(),
-            runtime = RuntimeInformation.FrameworkDescription,
-            processors = Environment.ProcessorCount,
-            machineName = Environment.MachineName,
-            userName = Environment.UserName,
-            workingDir = Environment.CurrentDirectory,
-        };
-        return JsonSerializer.Serialize(info);
+        var info = new SysInfo(
+            RuntimeInformation.OSDescription,
+            RuntimeInformation.OSArchitecture.ToString(),
+            RuntimeInformation.FrameworkDescription,
+            Environment.ProcessorCount,
+            Environment.MachineName,
+            Environment.UserName,
+            Environment.CurrentDirectory);
+        return JsonSerializer.Serialize(info, ShowcaseJsonContext.Default.SysInfo);
     }
 
     [RynCommand("app.time")]
@@ -34,7 +33,6 @@ public static class ShowcaseCommands
     [RynCommand("app.calculate")]
     public static string Calculate(string expression)
     {
-        // Simple expression evaluator for demo
         var parts = expression.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 3)
             return "Error: use format 'a op b' (e.g. '42 + 8')";
@@ -74,7 +72,7 @@ public static class ShowcaseCommands
             (a, b) = (b, a + b);
         }
 
-        return JsonSerializer.Serialize(results);
+        return JsonSerializer.Serialize(results, ShowcaseJsonContext.Default.ListInt64);
     }
 
     [RynCommand("app.env")]
@@ -85,7 +83,6 @@ public static class ShowcaseCommands
         {
             if (entry.Key is string key && entry.Value is string value)
             {
-                // Only include safe, non-sensitive vars
                 if (!key.Contains("KEY", StringComparison.OrdinalIgnoreCase) &&
                     !key.Contains("SECRET", StringComparison.OrdinalIgnoreCase) &&
                     !key.Contains("TOKEN", StringComparison.OrdinalIgnoreCase) &&
@@ -96,6 +93,16 @@ public static class ShowcaseCommands
             }
         }
 
-        return JsonSerializer.Serialize(vars);
+        return JsonSerializer.Serialize(vars, ShowcaseJsonContext.Default.DictionaryStringString);
     }
 }
+
+internal sealed record SysInfo(
+    string Os, string Arch, string Runtime,
+    int Processors, string MachineName, string UserName, string WorkingDir);
+
+[JsonSerializable(typeof(SysInfo))]
+[JsonSerializable(typeof(List<long>))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+internal sealed partial class ShowcaseJsonContext : JsonSerializerContext;

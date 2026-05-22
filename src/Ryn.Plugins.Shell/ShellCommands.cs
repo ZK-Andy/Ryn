@@ -55,12 +55,8 @@ public static class ShellCommands
         var stderr = process.StandardError.ReadToEnd();
         process.WaitForExit();
 
-        return JsonSerializer.Serialize(new
-        {
-            stdout,
-            stderr,
-            exitCode = process.ExitCode,
-        });
+        var output = new ProcessOutput(stdout, stderr, process.ExitCode);
+        return System.Text.Json.JsonSerializer.Serialize(output, ShellJsonContext.Default.ProcessOutput);
     }
 
     [RynCommand("shell.open")]
@@ -74,3 +70,9 @@ public static class ShellCommands
             Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
     }
 }
+
+internal record ProcessOutput(string Stdout, string Stderr, int ExitCode);
+
+[System.Text.Json.Serialization.JsonSerializable(typeof(ProcessOutput))]
+[System.Text.Json.Serialization.JsonSourceGenerationOptions(PropertyNamingPolicy = System.Text.Json.Serialization.JsonKnownNamingPolicy.CamelCase)]
+internal partial class ShellJsonContext : System.Text.Json.Serialization.JsonSerializerContext;
