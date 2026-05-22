@@ -86,6 +86,8 @@ public sealed class RynApplicationBuilder
             (sp.GetRequiredService<RynWindowAccessor>().Window
             ?? throw new InvalidOperationException("WebView is not available. It is only accessible after RunAsync begins.")).WebView);
 
+        _services.AddSingleton<NativeApplicationAccessor>();
+
         // 5. User service configuration
         foreach (var configure in _configureActions)
         {

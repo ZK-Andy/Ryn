@@ -34,6 +34,8 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         _cachedResizable = options.Resizable;
     }
 
+    internal Action<nint>? OnNativeReady { get; set; }
+
     internal void SetCommandHandler(CommandDispatchHandler handler) => _commandHandler = handler;
 
     public IRynWebView WebView => _rynWebView ?? throw new InvalidOperationException("Window not initialized");
@@ -231,6 +233,9 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
             Saucer.saucer_webview_set_html(_webview, htmlStr.Pointer);
             htmlStr.Dispose();
         }
+
+        // Notify that native resources are ready
+        OnNativeReady?.Invoke((nint)_app);
 
         // Show the window
         Saucer.saucer_window_show(_window);

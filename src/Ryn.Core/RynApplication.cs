@@ -62,6 +62,9 @@ public sealed partial class RynApplication : IAsyncDisposable
         var accessor = _services.GetRequiredService<RynWindowAccessor>();
         accessor.Window = _window;
 
+        var nativeAccessor = _services.GetRequiredService<NativeApplicationAccessor>();
+        _window.OnNativeReady = handle => nativeAccessor.ApplicationHandle = handle;
+
         Log.Running(_logger);
 
         _window.Run(cts.Token);

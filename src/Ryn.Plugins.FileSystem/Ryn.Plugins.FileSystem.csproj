@@ -3,10 +3,17 @@
     <RootNamespace>Ryn.Plugins.FileSystem</RootNamespace>
     <Description>File system access plugin for Ryn applications</Description>
     <PackageTags>ryn;plugin;filesystem</PackageTags>
+    <NoWarn>IL2026;IL3050;CA1062;CA2227;CA1002</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ryn.Plugins.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Ryn.Core\Ryn.Core.csproj" />
     <ProjectReference Include="..\Ryn.Ipc\Ryn.Ipc.csproj" />
+    <ProjectReference Include="..\Ryn.Ipc.Generator\Ryn.Ipc.Generator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>
