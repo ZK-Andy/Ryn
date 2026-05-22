@@ -14,38 +14,14 @@ internal static class Program
 
         return args[0] switch
         {
-            "new" => HandleNew(args.AsSpan(1)),
-            "dev" => HandleDev(args.AsSpan(1)),
-            "build" => HandleBuild(args.AsSpan(1)),
-            "bundle" => HandleBundle(args.AsSpan(1)),
+            "new" => Commands.NewCommand.Execute(args.AsSpan(1)),
+            "dev" => Commands.DevCommand.Execute(args.AsSpan(1)),
+            "build" => Commands.BuildCommand.Execute(args.AsSpan(1)),
+            "bundle" => Commands.BundleCommand.Execute(args.AsSpan(1)),
             "--version" or "-v" => HandleVersion(),
             "--help" or "-h" => HandleHelp(),
             _ => HandleUnknown(args[0]),
         };
-    }
-
-    private static int HandleNew(ReadOnlySpan<string> args)
-    {
-        Console.Error.WriteLine("ryn new: not yet implemented");
-        return 1;
-    }
-
-    private static int HandleDev(ReadOnlySpan<string> args)
-    {
-        Console.Error.WriteLine("ryn dev: not yet implemented");
-        return 1;
-    }
-
-    private static int HandleBuild(ReadOnlySpan<string> args)
-    {
-        Console.Error.WriteLine("ryn build: not yet implemented");
-        return 1;
-    }
-
-    private static int HandleBundle(ReadOnlySpan<string> args)
-    {
-        Console.Error.WriteLine("ryn bundle: not yet implemented");
-        return 1;
     }
 
     private static int HandleVersion()
