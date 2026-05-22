@@ -68,7 +68,7 @@ public sealed class DispatcherTests
     private static RynCommandDispatcher CreateDispatcher(params ICommandRouter[] routers)
     {
         var services = new ServiceCollection().BuildServiceProvider();
-        return new RynCommandDispatcher(routers, services);
+        return new RynCommandDispatcher(routers, services, RynCapabilities.AllowAll());
     }
 
     private sealed class TestRouter(string command, string result) : ICommandRouter
