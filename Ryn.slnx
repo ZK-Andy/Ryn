@@ -10,6 +10,7 @@
     <Project Path="src/Ryn.Core/Ryn.Core.csproj" />
     <Project Path="src/Ryn.Interop/Ryn.Interop.csproj" />
     <Project Path="src/Ryn.Ipc/Ryn.Ipc.csproj" />
+    <Project Path="src/Ryn.Ipc.Generator/Ryn.Ipc.Generator.csproj" />
     <Project Path="src/Ryn.Plugins.Clipboard/Ryn.Plugins.Clipboard.csproj" />
     <Project Path="src/Ryn.Plugins.Dialog/Ryn.Plugins.Dialog.csproj" />
     <Project Path="src/Ryn.Plugins.FileSystem/Ryn.Plugins.FileSystem.csproj" />
