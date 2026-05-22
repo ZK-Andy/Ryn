@@ -17,6 +17,8 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
 
     private RynWebView? _rynWebView;
 
+    private CommandDispatchHandler? _commandHandler;
+
     private string _cachedTitle;
     private int _cachedWidth;
     private int _cachedHeight;
@@ -31,6 +33,8 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         _cachedHeight = options.Height;
         _cachedResizable = options.Resizable;
     }
+
+    internal void SetCommandHandler(CommandDispatchHandler handler) => _commandHandler = handler;
 
     public IRynWebView WebView => _rynWebView ?? throw new InvalidOperationException("Window not initialized");
 
@@ -203,18 +207,29 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         ApplyWindowOptions();
 
         // Create managed webview wrapper
-        _rynWebView = new RynWebView(_webview);
+        _rynWebView = new RynWebView(_webview, _app);
+
+        // Wire command dispatcher if configured
+        if (_commandHandler is not null)
+            _rynWebView.SetCommandHandler(_commandHandler);
 
         // Subscribe to window events
         SubscribeWindowEvents();
 
-        // Navigate to initial URL if set
+        // Navigate to initial content
         if (_options.Url != null)
         {
             Span<byte> urlBuf = stackalloc byte[256];
             var urlStr = Utf8String.Create(_options.Url.AbsoluteUri, urlBuf);
             Saucer.saucer_webview_set_url_str(_webview, urlStr.Pointer);
             urlStr.Dispose();
+        }
+        else if (_options.Html != null)
+        {
+            Span<byte> htmlBuf = stackalloc byte[256];
+            var htmlStr = Utf8String.Create(_options.Html, htmlBuf);
+            Saucer.saucer_webview_set_html(_webview, htmlStr.Pointer);
+            htmlStr.Dispose();
         }
 
         // Show the window

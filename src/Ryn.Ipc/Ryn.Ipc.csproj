@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Ryn.Core\Ryn.Core.csproj" />
     <ProjectReference Include="..\Ryn.Ipc.Generator\Ryn.Ipc.Generator.csproj"
-                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false"
+                      PrivateAssets="none" />
   </ItemGroup>
 </Project>

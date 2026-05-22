@@ -7,4 +7,5 @@ public interface IRynWebView
     public ValueTask<string> EvaluateJavaScriptAsync(string script, CancellationToken cancellationToken = default);
     public ValueTask InjectScriptAsync(string script, CancellationToken cancellationToken = default);
     public void RegisterCustomScheme(string scheme, Func<RynSchemeRequest, ValueTask<RynSchemeResponse>> handler);
+    public void EmitEvent(string eventName, string jsonData);
 }

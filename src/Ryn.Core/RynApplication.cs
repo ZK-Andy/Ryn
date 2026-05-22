@@ -52,6 +52,13 @@ public sealed partial class RynApplication : IAsyncDisposable
         var options = _services.GetRequiredService<RynOptions>();
         _window = new RynWindow(options);
 
+        // Wire IPC command dispatcher if registered (before Run, applied during OnReady)
+        var commandHandler = _services.GetService<CommandDispatchHandler>();
+        if (commandHandler is not null)
+        {
+            _window.SetCommandHandler(commandHandler);
+        }
+
         var accessor = _services.GetRequiredService<RynWindowAccessor>();
         accessor.Window = _window;
 

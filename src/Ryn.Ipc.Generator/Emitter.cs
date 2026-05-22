@@ -145,6 +145,9 @@ internal static class Emitter
         sb.AppendLine("                throw new RynCommandNotFoundException(command);");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    private static string __ToJson(string value) =>");
+        sb.AppendLine("        \"\\\"\" + value.Replace(\"\\\\\", \"\\\\\\\\\", System.StringComparison.Ordinal).Replace(\"\\\"\", \"\\\\\\\"\", System.StringComparison.Ordinal) + \"\\\"\";");
         sb.AppendLine("}");
     }
 
@@ -244,8 +247,8 @@ internal static class Emitter
         SpecialType.System_Single => "__result.ToString(System.Globalization.CultureInfo.InvariantCulture)",
         SpecialType.System_Double => "__result.ToString(System.Globalization.CultureInfo.InvariantCulture)",
         SpecialType.System_Boolean => "__result ? \"true\" : \"false\"",
-        SpecialType.System_String => "JsonSerializer.Serialize(__result)",
-        _ => "JsonSerializer.Serialize(__result)",
+        SpecialType.System_String => "__ToJson(__result)",
+        _ => "__result.ToString()",
     };
 
     private static void EmitExtensions(StringBuilder sb, CommandGroup group)

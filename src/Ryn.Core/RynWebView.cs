@@ -14,8 +14,53 @@ public sealed class RynWebView : IRynWebView, IDisposable
     private static ReadOnlySpan<byte> BridgeScript =>
         """
         (function(){
-          window.__ryn = window.__ryn || {};
-          window.__ryn.eval = function(id, encoded) {
+          var ryn = window.__ryn = window.__ryn || {};
+          var nextId = 1;
+          var pending = {};
+          var listeners = {};
+
+          ryn.invoke = function(command, args) {
+            return new Promise(function(resolve, reject) {
+              var id = nextId++;
+              pending[id] = { resolve: resolve, reject: reject };
+              var x = new XMLHttpRequest();
+              x.open('POST', 'ryn-ipc://cmd/' + id + '/' + encodeURIComponent(command), true);
+              x.send(args ? JSON.stringify(args) : '{}');
+            });
+          };
+
+          ryn._resolve = function(id, ok, data) {
+            var p = pending[id];
+            if (!p) return;
+            delete pending[id];
+            if (ok) {
+              try { p.resolve(JSON.parse(data)); } catch(e) { p.resolve(data); }
+            } else {
+              p.reject(new Error(data));
+            }
+          };
+
+          ryn.on = function(event, callback) {
+            if (!listeners[event]) listeners[event] = [];
+            listeners[event].push(callback);
+          };
+
+          ryn.off = function(event, callback) {
+            var list = listeners[event];
+            if (!list) return;
+            var idx = list.indexOf(callback);
+            if (idx >= 0) list.splice(idx, 1);
+          };
+
+          ryn._emit = function(event, data) {
+            var list = listeners[event];
+            if (!list) return;
+            for (var i = 0; i < list.length; i++) {
+              try { list[i](data); } catch(e) { console.error('Ryn event error:', e); }
+            }
+          };
+
+          ryn.eval = function(id, encoded) {
             try {
               var script = atob(encoded);
               var result = eval(script);
@@ -25,6 +70,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
               );
             } catch(e) { __ryn_send(id, 0, String(e)); }
           };
+
           function __ryn_send(id, ok, data) {
             var x = new XMLHttpRequest();
             x.open('POST', 'ryn-ipc://eval/' + id + '/' + ok, true);
@@ -34,6 +80,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
         """u8;
 
     private nint _webview;
+    private nint _app;
     private nint _selfHandle;
 
     private readonly ConcurrentDictionary<long, TaskCompletionSource<string>> _pendingEvals = new();
@@ -41,16 +88,21 @@ public sealed class RynWebView : IRynWebView, IDisposable
 
     private readonly ConcurrentDictionary<string, Func<RynSchemeRequest, ValueTask<RynSchemeResponse>>> _schemeHandlers = new();
 
+    private CommandDispatchHandler? _commandHandler;
+
     private bool _disposed;
 
-    internal unsafe RynWebView(saucer_webview* webview)
+    internal unsafe RynWebView(saucer_webview* webview, saucer_application* app)
     {
         _webview = (nint)webview;
+        _app = (nint)app;
         _selfHandle = (nint)NativeCallbackHelper.Alloc(this);
 
         RegisterIpcScheme();
         InjectBridgeScript();
     }
+
+    internal void SetCommandHandler(CommandDispatchHandler handler) => _commandHandler = handler;
 
     public unsafe ValueTask NavigateAsync(Uri url, CancellationToken cancellationToken = default)
     {
@@ -134,6 +186,14 @@ public sealed class RynWebView : IRynWebView, IDisposable
         str.Dispose();
     }
 
+    public void EmitEvent(string eventName, string jsonData)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(eventName);
+        var escapedEvent = EscapeForJs(eventName);
+        ExecuteOnUiThread($"window.__ryn._emit('{escapedEvent}',{jsonData})");
+    }
+
     private unsafe void RegisterIpcScheme()
     {
         Span<byte> buf = stackalloc byte[32];
@@ -175,6 +235,8 @@ public sealed class RynWebView : IRynWebView, IDisposable
         Saucer.saucer_url_free(url);
 
         var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        // eval/{id}/{ok} — JS eval response
         if (parts.Length >= 3 && parts[0] == "eval"
             && long.TryParse(parts[1], out var evalId)
             && int.TryParse(parts[2], out var ok))
@@ -188,9 +250,74 @@ public sealed class RynWebView : IRynWebView, IDisposable
                 else
                     tcs.TrySetException(new JavaScriptException(body));
             }
+
+            AcceptEmptyResponse(executor);
+            return;
+        }
+
+        // cmd/{id}/{command} — IPC command invocation
+        if (parts.Length >= 3 && parts[0] == "cmd"
+            && long.TryParse(parts[1], out var cmdId))
+        {
+            var command = Uri.UnescapeDataString(parts[2]);
+            var body = ReadRequestBody(request);
+            var args = Encoding.UTF8.GetBytes(body);
+
+            AcceptEmptyResponse(executor);
+            _ = DispatchCommandAsync(cmdId, command, args);
+            return;
         }
 
         AcceptEmptyResponse(executor);
+    }
+
+    private async Task DispatchCommandAsync(long id, string command, byte[] args)
+    {
+        if (_commandHandler is null) return;
+
+        try
+        {
+            var result = await _commandHandler(command, args, CancellationToken.None)
+                .ConfigureAwait(false);
+            var escaped = EscapeForJs(result);
+            ExecuteOnUiThread($"window.__ryn._resolve({id},true,'{escaped}')");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            var message = ex.InnerException?.Message ?? ex.Message;
+            var escaped = EscapeForJs(message);
+            ExecuteOnUiThread($"window.__ryn._resolve({id},false,'{escaped}')");
+        }
+    }
+
+    private unsafe void ExecuteOnUiThread(string js)
+    {
+        if (_app == 0 || _webview == 0) return;
+
+        // Capture values for the closure
+        var webview = _webview;
+        var app = _app;
+
+        var callbackData = NativeCallbackHelper.Alloc((Action)(() =>
+        {
+            Span<byte> buf = stackalloc byte[256];
+            var str = Utf8String.Create(js, buf);
+            Saucer.saucer_webview_execute((saucer_webview*)webview, str.Pointer);
+            str.Dispose();
+        }));
+
+        Saucer.saucer_application_post(
+            (saucer_application*)app,
+            (delegate* unmanaged[Cdecl]<void*, void>)&ExecutePostedAction,
+            callbackData);
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static unsafe void ExecutePostedAction(void* userdata)
+    {
+        var action = NativeCallbackHelper.Resolve<Action>(userdata);
+        NativeCallbackHelper.Free(userdata);
+        action();
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -290,6 +417,12 @@ public sealed class RynWebView : IRynWebView, IDisposable
         return Encoding.UTF8.GetString(data, (int)size);
     }
 
+    private static string EscapeForJs(string value) =>
+        value.Replace("\\", "\\\\", StringComparison.Ordinal)
+             .Replace("'", "\\'", StringComparison.Ordinal)
+             .Replace("\n", "\\n", StringComparison.Ordinal)
+             .Replace("\r", "\\r", StringComparison.Ordinal);
+
     public unsafe void Dispose()
     {
         if (_disposed) return;
@@ -308,6 +441,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
         }
 
         _webview = 0;
+        _app = 0;
     }
 }
 

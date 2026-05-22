@@ -143,6 +143,7 @@ public sealed class RynApplicationBuilder
         target.Frameless = source.Frameless;
         target.Transparent = source.Transparent;
         target.Url = source.Url;
+        target.Html = source.Html;
         target.DevTools = source.DevTools;
     }
 }
