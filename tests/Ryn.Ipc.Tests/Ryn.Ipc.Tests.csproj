@@ -13,9 +13,12 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Verify.Xunit" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ryn.Ipc\Ryn.Ipc.csproj" />
+    <ProjectReference Include="..\..\src\Ryn.Ipc.Generator\Ryn.Ipc.Generator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
   </ItemGroup>
 </Project>
