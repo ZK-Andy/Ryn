@@ -41,7 +41,7 @@ jobs:
           - os: windows-latest
             backend: WebView2
             rid: win-x64
-            cmake-args: ""
+            cmake-args: -A x64
             lib-prefix: ""
             lib-ext: .dll
             archive-ext: .zip
@@ -77,10 +77,18 @@ jobs:
         shell: bash
         run: |
           mkdir -p staging
-          find native-out build/native -maxdepth 3 \
+          find native-out build/native -maxdepth 4 \
             \( -name "${{ matrix.lib-prefix }}saucer-bindings${{ matrix.lib-ext }}" \
             -o -name "${{ matrix.lib-prefix }}saucer-bindings-desktop${{ matrix.lib-ext }}" \) \
             -exec cp {} staging/ \;
+          ls -la staging/
+
+      - name: Collect Windows transitive dependencies
+        if: matrix.rid == 'win-x64'
+        shell: bash
+        run: |
+          find build/native/_deps/saucer-build -name "saucer.dll" -exec cp {} staging/ \; 2>/dev/null || true
+          find build/native/_deps/saucer-build -name "WebView2Loader.dll" -path "*/win-x64/*" -exec cp {} staging/ \; 2>/dev/null || true
           ls -la staging/
 
       - name: Build ryn-pty shim (Unix only)

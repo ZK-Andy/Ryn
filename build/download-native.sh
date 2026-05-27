@@ -12,7 +12,29 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO="Yupmoh/Ryn"
+API_BASE="https://api.github.com/repos/$REPO"
 INTEROP_DIR="$REPO_ROOT/src/Ryn.Interop"
+
+get_github_token() {
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then echo "$GITHUB_TOKEN"; return; fi
+    if [[ -n "${GH_TOKEN:-}" ]]; then echo "$GH_TOKEN"; return; fi
+
+    local token
+    token=$(printf 'protocol=https\nhost=github.com\n' | git credential fill 2>/dev/null | grep '^password=' | cut -d= -f2- || true)
+    if [[ -n "$token" ]]; then echo "$token"; return; fi
+
+    echo ""
+}
+
+auth_header() {
+    local token
+    token="$(get_github_token)"
+    if [[ -n "$token" ]]; then
+        echo "Authorization: Bearer $token"
+    else
+        echo "X-No-Auth: true"
+    fi
+}
 
 detect_rid() {
     local os arch
@@ -51,32 +73,50 @@ download_rid() {
 
     echo "==> Downloading $archive_name..."
 
-    if ! gh release download --repo "$REPO" --pattern "$archive_name" --dir /tmp --clobber 2>/dev/null; then
-        echo "    Failed to download from GitHub Releases."
-        echo "    Trying latest release tag matching 'native-v*'..."
+    local auth_hdr
+    auth_hdr="$(auth_header)"
 
-        local tag
-        tag=$(gh release list --repo "$REPO" --limit 10 2>/dev/null | grep -o 'native-v[^ ]*' | head -1 || true)
+    # Query releases via REST API
+    local releases_json
+    releases_json=$(curl -sS -H "$auth_hdr" -H "Accept: application/vnd.github+json" "$API_BASE/releases" 2>/dev/null) || {
+        echo "    Failed to query GitHub API."
+        return 1
+    }
 
-        if [[ -z "$tag" ]]; then
-            echo "    No native-v* release found."
-            return 1
-        fi
+    # Find the asset URL — try all releases, prefer native-v* tagged ones
+    local asset_url=""
+    asset_url=$(echo "$releases_json" | python3 -c "
+import json, sys
+releases = json.load(sys.stdin)
+for r in releases:
+    for a in r.get('assets', []):
+        if a['name'] == '$archive_name':
+            print(a['url'])
+            sys.exit(0)
+sys.exit(1)
+" 2>/dev/null) || true
 
-        if ! gh release download "$tag" --repo "$REPO" --pattern "$archive_name" --dir /tmp --clobber 2>/dev/null; then
-            echo "    Download failed for tag $tag."
-            return 1
-        fi
+    if [[ -z "$asset_url" ]]; then
+        echo "    No release found containing $archive_name."
+        return 1
+    fi
+
+    echo "    Found asset, downloading..."
+
+    local tmp_file="/tmp/$archive_name"
+    if ! curl -sS -L -H "$auth_hdr" -H "Accept: application/octet-stream" -o "$tmp_file" "$asset_url"; then
+        echo "    Download failed."
+        return 1
     fi
 
     echo "    Extracting to $dest..."
     if [[ "$ext" == ".zip" ]]; then
-        unzip -o "/tmp/$archive_name" -d "$dest"
+        unzip -o "$tmp_file" -d "$dest"
     else
-        tar -xzf "/tmp/$archive_name" -C "$dest"
+        tar -xzf "$tmp_file" -C "$dest"
     fi
 
-    rm -f "/tmp/$archive_name"
+    rm -f "$tmp_file"
     echo "    Done: $(ls "$dest")"
 }
 
