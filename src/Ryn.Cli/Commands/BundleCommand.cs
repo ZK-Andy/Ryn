@@ -18,12 +18,13 @@ internal static class BundleCommand
         var projectDir = Path.GetDirectoryName(csproj)!;
         var projectName = Path.GetFileNameWithoutExtension(csproj);
 
-        // First build for release
+        var publishArgs = BuildPublishArgs(args);
+
         Console.WriteLine($"Building {projectName} for release...");
         var buildProcess = Process.Start(new ProcessStartInfo
         {
             FileName = "dotnet",
-            Arguments = "publish -c Release --nologo",
+            Arguments = publishArgs,
             WorkingDirectory = projectDir,
             UseShellExecute = false,
         });
@@ -254,6 +255,30 @@ internal static class BundleCommand
         Console.WriteLine($"  Run with: {appRunPath}");
         Console.WriteLine($"  To create an AppImage: appimagetool {bundleDir}");
         return 0;
+    }
+
+    private static string BuildPublishArgs(ReadOnlySpan<string> args)
+    {
+        var sb = new System.Text.StringBuilder("publish -c Release --nologo");
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] == "--rid" && i + 1 < args.Length)
+            {
+                sb.Append(System.Globalization.CultureInfo.InvariantCulture, $" -r {args[i + 1]}");
+                i++;
+            }
+            else if (args[i] == "--aot")
+            {
+                sb.Append(" -p:PublishAot=true");
+            }
+            else if (args[i] == "--self-contained")
+            {
+                sb.Append(" --self-contained");
+            }
+        }
+
+        return sb.ToString();
     }
 
     private static string ResolvePublishDir(string projectDir)
