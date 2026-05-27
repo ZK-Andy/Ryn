@@ -7,14 +7,20 @@ BUILD_DIR="$REPO_ROOT/build/native"
 VENDOR_DIR="$REPO_ROOT/vendor/saucer-bindings"
 
 OS="$(uname -s)"
-ARCH="$(uname -m)"
+RAW_ARCH="$(uname -m)"
+
+case "$RAW_ARCH" in
+    x86_64) ARCH="x64" ;;
+    aarch64) ARCH="arm64" ;;
+    *) ARCH="$RAW_ARCH" ;;
+esac
 
 case "$OS" in
     Darwin)
         RID="osx-$ARCH"
         LIB_PREFIX="lib"
         LIB_EXT=".dylib"
-        CMAKE_EXTRA="-DCMAKE_OSX_ARCHITECTURES=$ARCH -Dsaucer_backend=WebKit"
+        CMAKE_EXTRA="-DCMAKE_OSX_ARCHITECTURES=$RAW_ARCH -Dsaucer_backend=WebKit"
         ;;
     Linux)
         RID="linux-$ARCH"
