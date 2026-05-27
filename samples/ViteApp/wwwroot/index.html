@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>ViteApp</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #0f0f0f; color: #e0e0e0;
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; height: 100vh; gap: 24px;
+        }
+        h1 { font-size: 2em; color: #7c3aed; }
+        .status { font-size: 0.9em; padding: 8px 16px; border-radius: 8px; }
+        .ok { background: #064e3b; color: #6ee7b7; }
+        .fail { background: #7f1d1d; color: #fca5a5; }
+        .card {
+            background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px;
+            padding: 24px; width: 420px;
+        }
+        button {
+            padding: 8px 16px; border-radius: 8px; border: none;
+            background: #7c3aed; color: #fff; cursor: pointer; font-weight: 600;
+        }
+        button:hover { background: #6d28d9; }
+        .result {
+            background: #0d0d1a; border-radius: 8px; padding: 12px;
+            font-family: monospace; min-height: 40px; margin-top: 12px;
+            border: 1px solid #2a2a4a; white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>Ryn + Vite</h1>
+    <div id="status" class="status">Testing IPC...</div>
+
+    <div class="card">
+        <button onclick="testIpc()">Test IPC Round-trip</button>
+        <div class="result" id="result">Click to test</div>
+    </div>
+
+    <script>
+        async function testIpc() {
+            var el = document.getElementById('result');
+            var status = document.getElementById('status');
+            try {
+                var t0 = performance.now();
+                var ping = await window.__ryn.invoke('ping');
+                var time = await window.__ryn.invoke('getTime');
+                var sum = await window.__ryn.invoke('add', { a: 17, b: 25 });
+                var elapsed = (performance.now() - t0).toFixed(1);
+
+                el.textContent =
+                    'ping  → ' + JSON.stringify(ping) + '\n' +
+                    'time  → ' + JSON.stringify(time) + '\n' +
+                    'add   → ' + JSON.stringify(sum) + '\n' +
+                    'total → ' + elapsed + 'ms';
+
+                status.className = 'status ok';
+                status.textContent = 'IPC working (' + elapsed + 'ms round-trip for 3 commands)';
+            } catch (e) {
+                el.textContent = 'Error: ' + e.message;
+                status.className = 'status fail';
+                status.textContent = 'IPC failed: ' + e.message;
+            }
+        }
+
+        // Auto-test on load
+        if (window.__ryn) testIpc();
+        else setTimeout(testIpc, 500);
+    </script>
+</body>
+</html>

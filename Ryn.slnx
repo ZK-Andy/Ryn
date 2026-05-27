@@ -2,6 +2,7 @@
   <Folder Name="/samples/">
     <Project Path="samples/HelloWindow/HelloWindow.csproj" />
     <Project Path="samples/Showcase/Showcase.csproj" />
+    <Project Path="samples/ViteApp/ViteApp.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Ryn.Benchmarks/Ryn.Benchmarks.csproj" />
