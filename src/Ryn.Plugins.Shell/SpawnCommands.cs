@@ -93,11 +93,24 @@ public sealed class SpawnCommands : IDisposable
         {
             if (!spawned.Process.HasExited)
                 spawned.Process.Kill(entireProcessTree: true);
+
+            // Wait for the process to fully exit so WaitForExit in the background
+            // task unblocks and all output callbacks complete before we dispose
+            spawned.Process.WaitForExit();
         }
         catch (InvalidOperationException)
         {
             // Process already exited
         }
+
+        spawned.StdoutBatcher.FlushNow();
+        spawned.StderrBatcher.FlushNow();
+
+        var pidStr = pid.ToString(CultureInfo.InvariantCulture);
+        var exitCode = spawned.Process.HasExited
+            ? spawned.Process.ExitCode.ToString(CultureInfo.InvariantCulture)
+            : "-1";
+        _webView.EmitEvent($"shell.exit.{pidStr}", exitCode);
 
         spawned.Dispose();
         return true;
