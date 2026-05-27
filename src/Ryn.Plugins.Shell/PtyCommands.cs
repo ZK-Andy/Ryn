@@ -118,6 +118,9 @@ public sealed class PtyCommands : IDisposable
     [RynCommand("shell.ptyResize")]
     public bool PtyResize(int pid, int cols, int rows)
     {
+        if (cols <= 0 || rows <= 0 || cols > 500 || rows > 500)
+            return false;
+
         if (!_sessions.TryGetValue(pid, out var session))
             return false;
 
@@ -413,7 +416,7 @@ internal static partial class PtyNative
         return fallbackMasterFd;
     }
 
-    [DllImport("saucer-bindings", EntryPoint = "ryn_pty_spawn", SetLastError = true,
+    [DllImport("ryn-pty", EntryPoint = "ryn_pty_spawn", SetLastError = true,
         BestFitMapping = false, ThrowOnUnmappableChar = true)]
     private static extern int ryn_pty_spawn(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string command,

@@ -65,6 +65,21 @@ if [[ -f "$BUILD_DIR/modules/desktop/$DESKTOP_LIB_NAME" ]]; then
     echo "   $DESKTOP_LIB_NAME"
 fi
 
+# Build ryn_pty native shim (Unix only)
+PTY_SRC="$REPO_ROOT/src/Ryn.Plugins.Shell/native/ryn_pty.c"
+if [[ "$OS" != MINGW* && "$OS" != MSYS* && "$OS" != CYGWIN* && -f "$PTY_SRC" ]]; then
+    echo "==> Building ryn-pty shim..."
+    PTY_LIB="${LIB_PREFIX}ryn-pty${LIB_EXT}"
+    PTY_FLAGS="-shared -fPIC -O2"
+    if [[ "$OS" == "Darwin" ]]; then
+        PTY_FLAGS="$PTY_FLAGS -lutil"
+    else
+        PTY_FLAGS="$PTY_FLAGS -lutil"
+    fi
+    cc $PTY_FLAGS -o "$DEST_DIR/$PTY_LIB" "$PTY_SRC"
+    echo "   $PTY_LIB"
+fi
+
 echo ""
 echo "==> Verifying library..."
 if command -v nm &> /dev/null; then

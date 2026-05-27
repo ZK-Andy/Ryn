@@ -83,6 +83,14 @@ jobs:
             -exec cp {} staging/ \;
           ls -la staging/
 
+      - name: Build ryn-pty shim (Unix only)
+        if: matrix.rid != 'win-x64'
+        shell: bash
+        run: |
+          PTY_SRC="src/Ryn.Plugins.Shell/native/ryn_pty.c"
+          PTY_LIB="${{ matrix.lib-prefix }}ryn-pty${{ matrix.lib-ext }}"
+          cc -shared -fPIC -O2 -lutil -o "staging/$PTY_LIB" "$PTY_SRC"
+
       - name: Package (tar.gz)
         if: matrix.archive-ext == '.tar.gz'
         run: tar -czf saucer-bindings-${{ matrix.rid }}${{ matrix.archive-ext }} -C staging .
