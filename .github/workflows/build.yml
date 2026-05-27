@@ -74,7 +74,6 @@ jobs:
       - name: Integration test
         if: hashFiles(format('src/Ryn.Interop/runtimes/{0}/native/*', matrix.rid)) != ''
         run: dotnet test --no-build -c ${{ matrix.configuration }} --filter "Category=Integration" --logger "trx;LogFileName=integration-results.trx"
-        continue-on-error: true
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
