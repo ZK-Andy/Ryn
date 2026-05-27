@@ -18,6 +18,14 @@ internal static class BundleCommand
         var projectDir = Path.GetDirectoryName(csproj)!;
         var projectName = Path.GetFileNameWithoutExtension(csproj);
 
+        var targetRid = GetArgValue(args, "--rid");
+        if (targetRid is not null && !string.Equals(targetRid, RuntimeInformation.RuntimeIdentifier, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine($"  Cross-RID bundling is not supported. Cannot bundle for '{targetRid}' on {RuntimeInformation.RuntimeIdentifier}.");
+            Console.Error.WriteLine("  Build the bundle on the target platform, or use CI to produce platform-specific bundles.");
+            return 1;
+        }
+
         var publishArgs = BuildPublishArgs(args);
 
         Console.WriteLine($"Building {projectName} for release...");
@@ -33,17 +41,6 @@ internal static class BundleCommand
         if (buildProcess?.ExitCode != 0)
         {
             Console.Error.WriteLine("  Build failed.");
-            return 1;
-        }
-
-        var targetRid = GetArgValue(args, "--rid");
-        if (targetRid is not null && !targetRid.StartsWith(
-                RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "osx" :
-                RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "win" : "linux",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            Console.Error.WriteLine($"  Cross-platform bundling is not supported. Cannot bundle for '{targetRid}' on {RuntimeInformation.RuntimeIdentifier}.");
-            Console.Error.WriteLine("  Build the bundle on the target platform, or use CI to produce platform-specific bundles.");
             return 1;
         }
 

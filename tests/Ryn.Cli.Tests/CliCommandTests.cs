@@ -81,6 +81,28 @@ public sealed class CliCommandTests
     }
 
     [Fact]
+    public async Task Bundle_CrossRid_RejectsWithError()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"ryn-rid-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+#pragma warning disable CA1849
+        File.WriteAllText(Path.Combine(tempDir, "Test.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+#pragma warning restore CA1849
+        try
+        {
+            var wrongRid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier == "osx-arm64"
+                ? "linux-x64" : "osx-arm64";
+            var result = await RunCliAsync("bundle", tempDir, "--rid", wrongRid);
+            result.ExitCode.Should().Be(1);
+            result.Stderr.Should().Contain("Cross-RID bundling is not supported");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Dev_NoCsproj_ReturnsError()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"ryn-dev-{Guid.NewGuid():N}");
@@ -97,7 +119,7 @@ public sealed class CliCommandTests
         }
     }
 
-    private static async Task<CliResult> RunCliAsync(string command, string? workingDir = null)
+    private static async Task<CliResult> RunCliAsync(string command, string? workingDir = null, params string[] extraArgs)
     {
 #pragma warning disable CA2007
         using var process = new Process();
@@ -115,6 +137,8 @@ public sealed class CliCommandTests
         process.StartInfo.ArgumentList.Add(CliProject);
         process.StartInfo.ArgumentList.Add("--");
         process.StartInfo.ArgumentList.Add(command);
+        foreach (var arg in extraArgs)
+            process.StartInfo.ArgumentList.Add(arg);
 
         process.Start();
 
