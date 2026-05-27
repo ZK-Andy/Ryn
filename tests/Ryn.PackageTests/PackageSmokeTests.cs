@@ -72,16 +72,13 @@ public sealed class PackageSmokeTests : IDisposable
 
         // Step 5: Verify runtime native assets are in the output
         var outputDir = Path.Combine(appDir, "bin", "Release", "net10.0");
-        if (Directory.Exists(outputDir))
-        {
-            var runtimesDir = Path.Combine(outputDir, "runtimes");
-            if (Directory.Exists(runtimesDir))
-            {
-                var nativeFiles = Directory.GetFiles(runtimesDir, "*", SearchOption.AllDirectories);
-                nativeFiles.Should().NotBeEmpty(
-                    "runtime native assets from Ryn.Interop should be copied to output via buildTransitive targets");
-            }
-        }
+        Directory.Exists(outputDir).Should().BeTrue("the build should produce output in bin/Release/net10.0");
+        var runtimesDir = Path.Combine(outputDir, "runtimes");
+        Directory.Exists(runtimesDir).Should().BeTrue(
+            "runtimes/ directory must exist — Ryn.Interop buildTransitive targets should copy native assets");
+        var nativeFiles = Directory.GetFiles(runtimesDir, "*", SearchOption.AllDirectories);
+        nativeFiles.Should().NotBeEmpty(
+            "runtime native assets from Ryn.Interop should be present in the output");
 #pragma warning restore CA2007
     }
 
