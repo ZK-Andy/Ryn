@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Ryn File Manager</title>
+<style>
+  :root {
+    --bg: #0a0a12; --surface: #12121f; --surface2: #1a1a2e;
+    --border: #2a2a4a; --text: #e0e0e8; --muted: #666680;
+    --accent: #7c3aed; --accent2: #a78bfa; --accent3: #c4b5fd;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 8px 16px; flex-shrink: 0;
+  }
+  .toolbar .btn {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); cursor: pointer;
+    font-size: 13px; font-weight: 500; transition: all 0.15s;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .toolbar .btn:hover { background: #252540; border-color: var(--accent); }
+
+  /* Breadcrumb */
+  .breadcrumb {
+    display: flex; align-items: center; flex: 1;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 12px; font-size: 13px; overflow-x: auto; white-space: nowrap;
+    gap: 4px;
+  }
+  .breadcrumb span { color: var(--muted); }
+  .breadcrumb a {
+    color: var(--accent2); text-decoration: none; cursor: pointer;
+    padding: 2px 4px; border-radius: 4px;
+  }
+  .breadcrumb a:hover { background: var(--surface2); color: var(--accent3); }
+
+  /* Main layout */
+  .main {
+    display: flex; flex: 1; overflow: hidden;
+  }
+
+  /* File list */
+  .file-panel {
+    flex: 1; overflow-y: auto; padding: 0;
+  }
+  .file-table {
+    width: 100%; border-collapse: collapse;
+  }
+  .file-table thead {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--surface);
+  }
+  .file-table th {
+    padding: 8px 16px; text-align: left; font-size: 11px; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .file-table td {
+    padding: 6px 16px; font-size: 13px;
+    border-bottom: 1px solid #16162a; cursor: default;
+  }
+  .file-table tr:hover td { background: var(--surface2); }
+  .file-table tr.selected td { background: #1e1b4b; }
+  .file-row-icon { width: 32px; text-align: center; font-size: 16px; }
+  .file-row-name { font-weight: 500; }
+  .file-row-name.dir { color: var(--accent2); cursor: pointer; }
+  .file-row-size { color: var(--muted); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; width: 100px; text-align: right; }
+  .file-row-date { color: var(--muted); font-size: 12px; width: 160px; }
+
+  /* Preview panel */
+  .preview-panel {
+    width: 380px; border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    background: var(--surface); flex-shrink: 0;
+  }
+  .preview-panel.hidden { display: none; }
+  .preview-header {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .preview-header h3 {
+    font-size: 13px; color: var(--accent2); font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+  }
+  .preview-close {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 18px; padding: 0 4px; line-height: 1;
+  }
+  .preview-close:hover { color: var(--text); }
+  .preview-meta {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--muted);
+  }
+  .preview-meta table { width: 100%; }
+  .preview-meta td { padding: 3px 0; }
+  .preview-meta td:first-child { color: var(--muted); width: 80px; font-weight: 500; }
+  .preview-meta td:last-child { color: var(--accent3); font-family: 'SF Mono', monospace; word-break: break-all; }
+  .preview-content {
+    flex: 1; overflow: auto; padding: 12px 16px;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px;
+    line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+    color: var(--text);
+  }
+  .preview-placeholder {
+    display: flex; align-items: center; justify-content: center;
+    flex: 1; color: var(--muted); font-size: 13px;
+  }
+
+  /* Status bar */
+  .statusbar {
+    padding: 4px 16px; background: var(--surface); border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--muted); flex-shrink: 0;
+    display: flex; justify-content: space-between;
+  }
+
+  /* Loading & error states */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; color: var(--muted); gap: 8px; font-size: 13px;
+  }
+  .empty-state .icon { font-size: 40px; opacity: 0.5; }
+  .error-msg {
+    padding: 16px; margin: 16px; background: #1a0a0a; border: 1px solid #4a1a1a;
+    border-radius: 8px; color: var(--red); font-size: 13px;
+  }
+
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+  .loading { animation: pulse 1.5s ease-in-out infinite; color: var(--muted); padding: 24px; text-align: center; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button class="btn" onclick="goUp()" title="Go to parent directory">&#x2191; Up</button>
+  <button class="btn" onclick="goHome()" title="Go to home directory">&#x2302; Home</button>
+  <div class="breadcrumb" id="breadcrumb"></div>
+  <button class="btn" onclick="refresh()" title="Refresh">&#x21BB;</button>
+</div>
+
+<div class="main">
+  <div class="file-panel" id="filePanel">
+    <table class="file-table">
+      <thead>
+        <tr>
+          <th style="width:32px"></th>
+          <th>Name</th>
+          <th style="width:100px;text-align:right">Size</th>
+          <th style="width:160px">Modified</th>
+        </tr>
+      </thead>
+      <tbody id="fileList">
+        <tr><td colspan="4"><div class="loading">Loading...</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="preview-panel hidden" id="previewPanel">
+    <div class="preview-header">
+      <h3 id="previewTitle">Preview</h3>
+      <button class="preview-close" onclick="closePreview()">&#x2715;</button>
+    </div>
+    <div class="preview-meta" id="previewMeta"></div>
+    <div class="preview-content" id="previewContent"></div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <span id="statusLeft">Ready</span>
+  <span id="statusRight"></span>
+</div>
+
+<script>
+  var currentPath = '';
+  var entries = [];
+  var selectedIndex = -1;
+  var isRynAvailable = false;
+
+  async function invoke(cmd, args) {
+    if (!window.__ryn || !window.__ryn.invoke) {
+      throw new Error('Not running inside Ryn. Use the Ryn runtime to browse files.');
+    }
+    return await window.__ryn.invoke(cmd, args || {});
+  }
+
+  function formatSize(bytes) {
+    if (bytes === 0) return '--';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+    return (bytes / 1073741824).toFixed(1) + ' GB';
+  }
+
+  function formatDate(isoStr) {
+    try {
+      var d = new Date(isoStr);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return isoStr;
+    }
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function updateBreadcrumb(path) {
+    var parts = path.split('/').filter(function(p) { return p.length > 0; });
+    var html = '<a onclick="navigateTo(\'/\')">&#x2302;</a>';
+    var accumulated = '';
+    for (var i = 0; i < parts.length; i++) {
+      accumulated += '/' + parts[i];
+      html += '<span>/</span>';
+      var escapedPath = accumulated.replace(/'/g, "\\'");
+      html += '<a onclick="navigateTo(\'' + escapedPath + '\')">' + escapeHtml(parts[i]) + '</a>';
+    }
+    document.getElementById('breadcrumb').innerHTML = html;
+  }
+
+  async function navigateTo(path) {
+    currentPath = path;
+    selectedIndex = -1;
+    closePreview();
+    updateBreadcrumb(path);
+    document.getElementById('statusLeft').textContent = 'Loading...';
+
+    try {
+      var result = await invoke('fs.readDir', { path: path });
+      entries = JSON.parse(result);
+
+      entries.sort(function(a, b) {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      renderFileList();
+      var dirs = entries.filter(function(e) { return e.isDirectory; }).length;
+      var files = entries.length - dirs;
+      document.getElementById('statusLeft').textContent = dirs + ' folders, ' + files + ' files';
+      document.getElementById('statusRight').textContent = path;
+    } catch (e) {
+      document.getElementById('fileList').innerHTML =
+        '<tr><td colspan="4"><div class="error-msg">' + escapeHtml(e.message) + '</div></td></tr>';
+      document.getElementById('statusLeft').textContent = 'Error loading directory';
+    }
+  }
+
+  function renderFileList() {
+    if (entries.length === 0) {
+      document.getElementById('fileList').innerHTML =
+        '<tr><td colspan="4"><div class="empty-state"><span class="icon">&#x1F4C2;</span>This folder is empty</div></td></tr>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var selected = i === selectedIndex ? ' selected' : '';
+      html += '<tr class="' + selected + '" onclick="selectEntry(' + i + ')" ondblclick="openEntry(' + i + ')">';
+      html += '<td class="file-row-icon">' + (e.isDirectory ? '📁' : '📄') + '</td>';
+      html += '<td class="file-row-name' + (e.isDirectory ? ' dir' : '') + '">' + escapeHtml(e.name) + '</td>';
+      html += '<td class="file-row-size">' + (e.isDirectory ? '' : formatSize(e.size)) + '</td>';
+      html += '<td class="file-row-date">' + formatDate(e.modified) + '</td>';
+      html += '</tr>';
+    }
+    document.getElementById('fileList').innerHTML = html;
+  }
+
+  function selectEntry(index) {
+    selectedIndex = index;
+    renderFileList();
+    showPreview(entries[index]);
+  }
+
+  function openEntry(index) {
+    var entry = entries[index];
+    if (entry.isDirectory) {
+      navigateTo(entry.path);
+    } else {
+      showPreview(entry);
+    }
+  }
+
+  async function showPreview(entry) {
+    var panel = document.getElementById('previewPanel');
+    panel.classList.remove('hidden');
+    document.getElementById('previewTitle').textContent = entry.name;
+
+    try {
+      var statResult = await invoke('fs.stat', { path: entry.path });
+      var stat = JSON.parse(statResult);
+
+      var metaHtml = '<table>';
+      metaHtml += '<tr><td>Path</td><td>' + escapeHtml(stat.path) + '</td></tr>';
+      metaHtml += '<tr><td>Size</td><td>' + formatSize(stat.size) + '</td></tr>';
+      metaHtml += '<tr><td>Created</td><td>' + formatDate(stat.created) + '</td></tr>';
+      metaHtml += '<tr><td>Modified</td><td>' + formatDate(stat.modified) + '</td></tr>';
+      metaHtml += '<tr><td>Accessed</td><td>' + formatDate(stat.accessed) + '</td></tr>';
+      metaHtml += '<tr><td>Type</td><td>' + (stat.isDirectory ? 'Directory' : 'File') + '</td></tr>';
+      metaHtml += '</table>';
+      document.getElementById('previewMeta').innerHTML = metaHtml;
+    } catch (e) {
+      document.getElementById('previewMeta').innerHTML =
+        '<span style="color:var(--red)">Could not load metadata</span>';
+    }
+
+    if (!entry.isDirectory) {
+      var ext = entry.name.split('.').pop().toLowerCase();
+      var textExts = ['txt','md','json','js','ts','css','html','xml','csv','yaml','yml',
+                      'toml','ini','cfg','conf','sh','bash','zsh','py','rb','rs','go',
+                      'java','kt','swift','cs','fs','cpp','c','h','hpp','lua','sql',
+                      'log','env','gitignore','editorconfig','csproj','sln','slnx','props',
+                      'targets','jsx','tsx','vue','svelte','astro','dockerfile','makefile'];
+
+      if (entry.size > 512 * 1024) {
+        document.getElementById('previewContent').textContent = 'File too large to preview (' + formatSize(entry.size) + ')';
+      } else if (textExts.indexOf(ext) !== -1 || entry.name.startsWith('.')) {
+        try {
+          var content = await invoke('fs.readTextFile', { path: entry.path });
+          document.getElementById('previewContent').textContent = content;
+        } catch (e) {
+          document.getElementById('previewContent').textContent = 'Could not read file: ' + e.message;
+        }
+      } else {
+        document.getElementById('previewContent').textContent = 'Binary file (' + ext + ') - preview not available';
+      }
+    } else {
+      document.getElementById('previewContent').textContent = '';
+    }
+  }
+
+  function closePreview() {
+    document.getElementById('previewPanel').classList.add('hidden');
+    selectedIndex = -1;
+    renderFileList();
+  }
+
+  function goUp() {
+    if (!currentPath || currentPath === '/') return;
+    var parts = currentPath.split('/').filter(function(p) { return p.length > 0; });
+    parts.pop();
+    navigateTo('/' + parts.join('/'));
+  }
+
+  function goHome() {
+    navigateTo(homePath || '/');
+  }
+
+  function refresh() {
+    navigateTo(currentPath);
+  }
+
+  // Detect Ryn and initialize
+  var homePath = '';
+
+  function init() {
+    if (window.__ryn && window.__ryn.invoke) {
+      isRynAvailable = true;
+      // Navigate to user home
+      homePath = '~';
+      // The filesystem plugin resolves ~ to home, but we can also try the profile path
+      // Start from home directory
+      navigateTo(homePath);
+    } else {
+      document.getElementById('fileList').innerHTML =
+        '<tr><td colspan="4"><div class="empty-state">' +
+        '<span class="icon">&#x26A0;</span>' +
+        '<strong>Not running inside Ryn</strong>' +
+        '<span>Launch this app with the Ryn runtime to browse files.</span>' +
+        '</div></td></tr>';
+      document.getElementById('statusLeft').textContent = 'Ryn bridge not available';
+      updateBreadcrumb('/');
+    }
+  }
+
+  // Wait for Ryn bridge or fallback
+  if (window.__ryn) {
+    init();
+  } else {
+    // Give the bridge a moment to initialize
+    setTimeout(function() { init(); }, 200);
+  }
+</script>
+</body>
+</html>
