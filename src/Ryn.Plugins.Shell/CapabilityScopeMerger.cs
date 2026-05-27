@@ -30,6 +30,6 @@ internal static class CapabilityScopeMerger
             .ToList();
 
         options.AllowedCommands.Clear();
-        options.AllowedCommands.AddRange(clamped.Count > 0 ? clamped : scope.AllowedCommands);
+        options.AllowedCommands.AddRange(clamped);
     }
 }

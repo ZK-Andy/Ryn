@@ -39,7 +39,7 @@ internal static class CapabilityScopeMerger
         }
 
         options.AllowedPaths.Clear();
-        options.AllowedPaths.AddRange(clamped.Count > 0 ? clamped : scope.AllowedPaths);
+        options.AllowedPaths.AddRange(clamped);
     }
 
     private static bool IsWithin(string fullPath, string directory)
