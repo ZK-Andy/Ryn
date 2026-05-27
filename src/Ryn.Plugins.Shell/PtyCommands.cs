@@ -337,7 +337,18 @@ internal static partial class PtyNative
     /// </summary>
     internal static int ForkWithPty(string command, string[] args, out int childPid)
     {
-        var pid = forkpty(out var masterFd, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        // Build null-terminated argv for the native shim
+        var argv = new string?[args.Length + 1];
+        Array.Copy(args, argv, args.Length);
+        argv[args.Length] = null;
+
+        // Try the native shim first (no managed work after fork)
+        var result = ryn_pty_spawn(command, argv, out var masterFd, out childPid);
+        if (result == 0)
+            return masterFd;
+
+        // Fallback to managed forkpty if native shim is not available
+        var pid = forkpty(out masterFd, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
 
         if (pid < 0)
         {
@@ -347,22 +358,21 @@ internal static partial class PtyNative
 
         if (pid == 0)
         {
-            // Child process — exec the command
-            // argv must be null-terminated for execvp
-            var argv = new string?[args.Length + 1];
-            Array.Copy(args, argv, args.Length);
-            argv[args.Length] = null;
-
             _ = libc_execvp(command, argv);
-
-            // If execvp returns, it failed
             libc_exit(127);
         }
 
-        // Parent process
         childPid = pid;
         return masterFd;
     }
+
+    [DllImport("saucer-bindings", EntryPoint = "ryn_pty_spawn", SetLastError = true,
+        BestFitMapping = false, ThrowOnUnmappableChar = true)]
+    private static extern int ryn_pty_spawn(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string command,
+        [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPUTF8Str)] string?[] argv,
+        out int masterFd,
+        out int childPid);
 
     internal static int Read(int fd, byte[] buf, int count)
     {
