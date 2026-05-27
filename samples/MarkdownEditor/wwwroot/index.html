@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Ryn Markdown Editor</title>
+<style>
+  :root {
+    --bg: #0a0a12; --surface: #12121f; --surface2: #1a1a2e;
+    --border: #2a2a4a; --text: #e0e0e8; --muted: #666680;
+    --accent: #7c3aed; --accent2: #a78bfa; --accent3: #c4b5fd;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 8px 16px; flex-shrink: 0;
+  }
+  .toolbar .btn {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); cursor: pointer;
+    font-size: 13px; font-weight: 500; transition: all 0.15s;
+  }
+  .toolbar .btn:hover { background: #252540; border-color: var(--accent); }
+  .toolbar .btn-primary {
+    background: var(--accent); color: white; border-color: var(--accent);
+  }
+  .toolbar .btn-primary:hover { background: #6d28d9; }
+  .toolbar .sep {
+    width: 1px; height: 20px; background: var(--border); margin: 0 4px;
+  }
+  .toolbar .title {
+    font-size: 13px; color: var(--muted); margin-left: 8px; flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .toolbar .title .filename { color: var(--accent2); }
+  .toolbar .title .modified { color: var(--yellow); margin-left: 4px; }
+
+  /* Editor layout */
+  .editor-container {
+    display: flex; flex: 1; overflow: hidden;
+  }
+
+  /* Left pane: editor */
+  .editor-pane {
+    flex: 1; display: flex; flex-direction: column;
+    border-right: 1px solid var(--border);
+    min-width: 0;
+  }
+  .pane-header {
+    padding: 6px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0;
+  }
+  #editor {
+    flex: 1; width: 100%; border: none; outline: none; resize: none;
+    background: var(--bg); color: var(--text); padding: 16px 20px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 14px; line-height: 1.7; tab-size: 4;
+  }
+  #editor::placeholder { color: var(--muted); }
+
+  /* Right pane: preview */
+  .preview-pane {
+    flex: 1; display: flex; flex-direction: column;
+    min-width: 0;
+  }
+  #preview {
+    flex: 1; overflow-y: auto; padding: 20px 24px;
+    font-size: 15px; line-height: 1.7;
+  }
+
+  /* Markdown rendered styles */
+  #preview h1 { font-size: 1.8em; font-weight: 700; color: var(--accent2); margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  #preview h2 { font-size: 1.4em; font-weight: 600; color: var(--accent3); margin: 24px 0 12px; }
+  #preview h3 { font-size: 1.15em; font-weight: 600; color: var(--text); margin: 20px 0 8px; }
+  #preview h4 { font-size: 1em; font-weight: 600; color: var(--muted); margin: 16px 0 8px; }
+  #preview h5 { font-size: 0.9em; font-weight: 600; color: var(--muted); margin: 12px 0 6px; }
+  #preview h6 { font-size: 0.85em; font-weight: 600; color: var(--muted); margin: 12px 0 6px; }
+  #preview p { margin: 0 0 12px; }
+  #preview strong { color: #f0f0f8; font-weight: 600; }
+  #preview em { font-style: italic; color: var(--accent3); }
+  #preview code {
+    background: var(--surface2); padding: 2px 6px; border-radius: 4px;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.9em; color: var(--accent2);
+  }
+  #preview pre {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; margin: 12px 0; overflow-x: auto;
+  }
+  #preview pre code {
+    background: none; padding: 0; font-size: 13px; color: var(--text);
+    line-height: 1.5;
+  }
+  #preview ul, #preview ol { margin: 0 0 12px 24px; }
+  #preview li { margin: 4px 0; }
+  #preview blockquote {
+    border-left: 3px solid var(--accent); padding: 8px 16px; margin: 12px 0;
+    background: var(--surface); border-radius: 0 8px 8px 0; color: var(--muted);
+  }
+  #preview a { color: var(--accent2); text-decoration: underline; }
+  #preview hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  #preview img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
+
+  /* Status bar */
+  .statusbar {
+    padding: 4px 16px; background: var(--surface); border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--muted); flex-shrink: 0;
+    display: flex; justify-content: space-between;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; background: var(--green);
+    color: white; padding: 10px 18px; border-radius: 8px; font-size: 13px;
+    font-weight: 600; transform: translateY(80px); opacity: 0;
+    transition: all 0.3s ease; z-index: 100;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.error { background: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button class="btn" onclick="newFile()">New</button>
+  <button class="btn" onclick="openFile()">Open</button>
+  <button class="btn btn-primary" onclick="saveFile()">Save</button>
+  <button class="btn" onclick="saveAsFile()">Save As</button>
+  <div class="sep"></div>
+  <div class="title">
+    <span class="filename" id="filenameDisplay">Untitled.md</span>
+    <span class="modified" id="modifiedIndicator" style="display:none">*</span>
+  </div>
+</div>
+
+<div class="editor-container">
+  <div class="editor-pane">
+    <div class="pane-header">Markdown</div>
+    <textarea id="editor" placeholder="Start writing markdown..." spellcheck="false"></textarea>
+  </div>
+  <div class="preview-pane">
+    <div class="pane-header">Preview</div>
+    <div id="preview"></div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <span id="statusLeft">Ready</span>
+  <span id="statusRight">Lines: 0 | Words: 0</span>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  var currentFilePath = '';
+  var isModified = false;
+  var debounceTimer = null;
+  var isRynAvailable = false;
+
+  async function invoke(cmd, args) {
+    if (!window.__ryn || !window.__ryn.invoke) {
+      throw new Error('Not running inside Ryn');
+    }
+    return await window.__ryn.invoke(cmd, args || {});
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // Simple markdown to HTML converter
+  function renderMarkdown(text) {
+    var lines = text.split('\n');
+    var html = '';
+    var inCodeBlock = false;
+    var codeBlockContent = '';
+    var inList = false;
+    var listType = '';
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+
+      // Fenced code blocks
+      if (line.match(/^```/)) {
+        if (inCodeBlock) {
+          html += '<pre><code>' + escapeHtml(codeBlockContent.replace(/\n$/, '')) + '</code></pre>\n';
+          codeBlockContent = '';
+          inCodeBlock = false;
+        } else {
+          if (inList) { html += listType === 'ul' ? '</ul>\n' : '</ol>\n'; inList = false; }
+          inCodeBlock = true;
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        codeBlockContent += line + '\n';
+        continue;
+      }
+
+      // Close list if needed
+      if (inList && !line.match(/^\s*[-*+]\s/) && !line.match(/^\s*\d+\.\s/) && line.trim() !== '') {
+        html += listType === 'ul' ? '</ul>\n' : '</ol>\n';
+        inList = false;
+      }
+
+      // Empty line
+      if (line.trim() === '') {
+        if (inList) { html += listType === 'ul' ? '</ul>\n' : '</ol>\n'; inList = false; }
+        continue;
+      }
+
+      // Horizontal rule
+      if (line.match(/^(-{3,}|\*{3,}|_{3,})$/)) {
+        html += '<hr>\n';
+        continue;
+      }
+
+      // Headers
+      var headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+      if (headerMatch) {
+        var level = headerMatch[1].length;
+        html += '<h' + level + '>' + inlineFormat(headerMatch[2]) + '</h' + level + '>\n';
+        continue;
+      }
+
+      // Blockquote
+      if (line.match(/^>\s?/)) {
+        var quoteContent = line.replace(/^>\s?/, '');
+        html += '<blockquote><p>' + inlineFormat(quoteContent) + '</p></blockquote>\n';
+        continue;
+      }
+
+      // Unordered list
+      var ulMatch = line.match(/^\s*[-*+]\s+(.+)$/);
+      if (ulMatch) {
+        if (!inList || listType !== 'ul') {
+          if (inList) html += '</ol>\n';
+          html += '<ul>\n';
+          inList = true;
+          listType = 'ul';
+        }
+        html += '<li>' + inlineFormat(ulMatch[1]) + '</li>\n';
+        continue;
+      }
+
+      // Ordered list
+      var olMatch = line.match(/^\s*\d+\.\s+(.+)$/);
+      if (olMatch) {
+        if (!inList || listType !== 'ol') {
+          if (inList) html += '</ul>\n';
+          html += '<ol>\n';
+          inList = true;
+          listType = 'ol';
+        }
+        html += '<li>' + inlineFormat(olMatch[1]) + '</li>\n';
+        continue;
+      }
+
+      // Regular paragraph
+      html += '<p>' + inlineFormat(line) + '</p>\n';
+    }
+
+    // Close any open blocks
+    if (inCodeBlock) {
+      html += '<pre><code>' + escapeHtml(codeBlockContent.replace(/\n$/, '')) + '</code></pre>\n';
+    }
+    if (inList) {
+      html += listType === 'ul' ? '</ul>\n' : '</ol>\n';
+    }
+
+    return html;
+  }
+
+  function inlineFormat(text) {
+    // Escape HTML first
+    text = escapeHtml(text);
+
+    // Images: ![alt](url)
+    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+
+    // Links: [text](url)
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+    // Inline code
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Bold + italic
+    text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+    text = text.replace(/___([^_]+)___/g, '<strong><em>$1</em></strong>');
+
+    // Bold
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+    // Italic
+    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    text = text.replace(/_([^_]+)_/g, '<em>$1</em>');
+
+    // Strikethrough
+    text = text.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+
+    return text;
+  }
+
+  function updatePreview() {
+    var text = document.getElementById('editor').value;
+    document.getElementById('preview').innerHTML = renderMarkdown(text);
+    updateStats(text);
+  }
+
+  function updateStats(text) {
+    var lines = text.split('\n').length;
+    var words = text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
+    document.getElementById('statusRight').textContent = 'Lines: ' + lines + ' | Words: ' + words;
+  }
+
+  function markModified() {
+    if (!isModified) {
+      isModified = true;
+      document.getElementById('modifiedIndicator').style.display = 'inline';
+    }
+  }
+
+  function markSaved() {
+    isModified = false;
+    document.getElementById('modifiedIndicator').style.display = 'none';
+  }
+
+  function setFilename(path) {
+    currentFilePath = path;
+    var name = path ? path.split('/').pop() : 'Untitled.md';
+    document.getElementById('filenameDisplay').textContent = name;
+    document.getElementById('statusLeft').textContent = path || 'New file';
+  }
+
+  function toast(msg, isError) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (isError ? ' error' : '');
+    setTimeout(function() { el.className = 'toast'; }, 2500);
+  }
+
+  // File operations
+  function newFile() {
+    document.getElementById('editor').value = '';
+    setFilename('');
+    markSaved();
+    updatePreview();
+  }
+
+  async function openFile() {
+    if (!isRynAvailable) {
+      toast('Not running inside Ryn', true);
+      return;
+    }
+
+    try {
+      var path = await invoke('dialog.openFile', { initialPath: currentFilePath || '~' });
+      if (!path) return;
+
+      var content = await invoke('fs.readTextFile', { path: path });
+      document.getElementById('editor').value = content;
+      setFilename(path);
+      markSaved();
+      updatePreview();
+      toast('Opened ' + path.split('/').pop());
+    } catch (e) {
+      toast('Failed to open: ' + e.message, true);
+    }
+  }
+
+  async function saveFile() {
+    if (!isRynAvailable) {
+      toast('Not running inside Ryn', true);
+      return;
+    }
+
+    if (!currentFilePath) {
+      saveAsFile();
+      return;
+    }
+
+    try {
+      var content = document.getElementById('editor').value;
+      await invoke('fs.writeTextFile', { path: currentFilePath, text: content });
+      markSaved();
+      toast('Saved');
+    } catch (e) {
+      toast('Failed to save: ' + e.message, true);
+    }
+  }
+
+  async function saveAsFile() {
+    if (!isRynAvailable) {
+      toast('Not running inside Ryn', true);
+      return;
+    }
+
+    try {
+      var path = await invoke('dialog.save', { initialPath: currentFilePath || '~/untitled.md' });
+      if (!path) return;
+
+      var content = document.getElementById('editor').value;
+      await invoke('fs.writeTextFile', { path: path, text: content });
+      setFilename(path);
+      markSaved();
+      toast('Saved as ' + path.split('/').pop());
+    } catch (e) {
+      toast('Failed to save: ' + e.message, true);
+    }
+  }
+
+  // Editor input handler with debounce
+  var editor = document.getElementById('editor');
+  editor.addEventListener('input', function() {
+    markModified();
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(updatePreview, 150);
+  });
+
+  // Tab key support in editor
+  editor.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      var start = this.selectionStart;
+      var end = this.selectionEnd;
+      this.value = this.value.substring(0, start) + '    ' + this.value.substring(end);
+      this.selectionStart = this.selectionEnd = start + 4;
+      markModified();
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(updatePreview, 150);
+    }
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault();
+      saveFile();
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
+      e.preventDefault();
+      openFile();
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+      e.preventDefault();
+      newFile();
+    }
+  });
+
+  // Initialize
+  function init() {
+    if (window.__ryn && window.__ryn.invoke) {
+      isRynAvailable = true;
+      document.getElementById('statusLeft').textContent = 'Ready';
+    } else {
+      document.getElementById('statusLeft').textContent = 'Standalone mode (file operations disabled)';
+    }
+
+    // Load sample content
+    editor.value = '# Welcome to Ryn Markdown Editor\n\nThis is a **split-pane** markdown editor built with the Ryn framework.\n\n## Features\n\n- Live preview as you type\n- **Bold**, *italic*, and `inline code`\n- Code blocks with syntax highlighting\n- Lists, blockquotes, and more\n- Open and save files using native dialogs\n\n## Code Example\n\n```\nvar app = RynApplication.CreateBuilder()\n    .ConfigureOptions(opts => {\n        opts.Title = "My App";\n    })\n    .Build();\n\nawait app.RunAsync();\n```\n\n## Blockquote\n\n> Ryn is a cross-platform desktop framework\n> for building native apps with web UIs.\n\n---\n\nStart editing to see the live preview in action!';
+    updatePreview();
+  }
+
+  if (window.__ryn) {
+    init();
+  } else {
+    setTimeout(function() { init(); }, 200);
+  }
+</script>
+</body>
+</html>

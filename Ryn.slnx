@@ -4,6 +4,8 @@
     <Project Path="samples/Showcase/Showcase.csproj" />
     <Project Path="samples/ViteApp/ViteApp.csproj" />
     <Project Path="samples/TerminalApp/TerminalApp.csproj" />
+    <Project Path="samples/FileManager/FileManager.csproj" />
+    <Project Path="samples/MarkdownEditor/MarkdownEditor.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Ryn.Benchmarks/Ryn.Benchmarks.csproj" />
