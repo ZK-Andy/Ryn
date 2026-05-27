@@ -81,10 +81,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p staging
-          find native-out build/native -maxdepth 4 \
+          SEARCH_DIRS=""
+          [ -d native-out ] && SEARCH_DIRS="native-out"
+          [ -d build/native ] && SEARCH_DIRS="$SEARCH_DIRS build/native"
+          find $SEARCH_DIRS -maxdepth 5 \
             \( -name "${{ matrix.lib-prefix }}saucer-bindings${{ matrix.lib-ext }}" \
             -o -name "${{ matrix.lib-prefix }}saucer-bindings-desktop${{ matrix.lib-ext }}" \) \
             -exec cp {} staging/ \;
+          echo "Collected:"
           ls -la staging/
 
       - name: Collect Windows transitive dependencies
