@@ -83,7 +83,8 @@ internal static class DevCommand
     private static void LaunchApp(string projectDir, string projectName)
     {
         var outputDir = Path.Combine(projectDir, "bin", "Debug", "net10.0");
-        var executable = Path.Combine(outputDir, projectName);
+        var exeName = OperatingSystem.IsWindows() ? projectName + ".exe" : projectName;
+        var executable = Path.Combine(outputDir, exeName);
 
         if (!File.Exists(executable))
         {
