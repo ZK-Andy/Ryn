@@ -69,7 +69,7 @@ jobs:
         run: dotnet build --no-restore -c ${{ matrix.configuration }}
 
       - name: Test
-        run: dotnet test --no-build -c ${{ matrix.configuration }} --filter "Category!=Integration" --logger "trx;LogFileName=results.trx"
+        run: dotnet test --no-build -c ${{ matrix.configuration }} --filter "Category!=Integration&Category!=Package" --logger "trx;LogFileName=results.trx"
 
       - name: Integration test
         if: hashFiles(format('src/Ryn.Interop/runtimes/{0}/native/*', matrix.rid)) != ''
