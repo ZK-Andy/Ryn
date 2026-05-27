@@ -226,6 +226,11 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
             Saucer.saucer_webview_set_url_str(_webview, urlStr.Pointer);
             urlStr.Dispose();
         }
+        else if (_options.ContentDirectory != null)
+        {
+            _rynWebView.SetContentDirectory(_options.ContentDirectory);
+            _rynWebView.NavigateToAppScheme();
+        }
         else if (_options.Html != null)
         {
             // Serve HTML via the ryn:// scheme handler (same origin as IPC, no CORS issues)

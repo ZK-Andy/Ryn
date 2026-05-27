@@ -87,6 +87,44 @@ dotnet run
 
 This scaffolds a project with project references to the local Ryn source. The generated app includes a sample IPC command, a dark-themed HTML frontend, and a `ryn.json` capability file.
 
+### Content serving
+
+Ryn serves frontend files via the `ryn://` custom scheme, keeping everything same-origin with IPC (no CORS issues). There are three ways to provide content:
+
+```csharp
+// Option 1: ContentDirectory — serves files from disk (recommended for dev)
+opts.ContentDirectory = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+
+// Option 2: Html — inline HTML string
+opts.Html = "<html>...</html>";
+
+// Option 3: Url — external URL (e.g. Vite dev server)
+opts.Url = new Uri("http://localhost:5173");
+```
+
+With `ContentDirectory`, files are read from disk on each request — changes are reflected on browser refresh without restarting the app.
+
+### Windows requirements
+
+On Windows, the entry point **must** use `[STAThread]` with a synchronous `Main` method. Without it, WebView2 initialization deadlocks silently. Ryn detects this at runtime and throws a clear error.
+
+```csharp
+public static class Program
+{
+    [System.STAThread]
+    public static void Main()
+    {
+        var app = RynApplication.CreateBuilder()
+            // ...
+            .Build();
+
+        app.Run(); // synchronous — blocks until window closes
+    }
+}
+```
+
+Do **not** use `async Task Main` or top-level statements on Windows — both default to MTA, which is incompatible with WebView2's COM requirements.
+
 ### How IPC works
 
 Mark C# methods with `[RynCommand]` — the source generator creates dispatch tables at compile time:

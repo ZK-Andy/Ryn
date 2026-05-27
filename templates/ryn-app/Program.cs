@@ -2,18 +2,23 @@ using Ryn.Core;
 using Ryn.Ipc;
 using RynApp;
 
-var html = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "wwwroot", "index.html"));
-
-var app = RynApplication.CreateBuilder()
-    .ConfigureOptions(opts =>
+public static class Program
+{
+    [System.STAThread]
+    public static void Main()
     {
-        opts.Html = html;
-    })
-    .ConfigureServices(services =>
-    {
-        services.AddRynCommands();
-        services.AddAppCommands();
-    })
-    .Build();
+        var app = RynApplication.CreateBuilder()
+            .ConfigureOptions(opts =>
+            {
+                opts.ContentDirectory = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+            })
+            .ConfigureServices(services =>
+            {
+                services.AddRynCommands();
+                services.AddAppCommands();
+            })
+            .Build();
 
-await app.RunAsync();
+        app.Run();
+    }
+}
