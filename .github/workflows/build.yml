@@ -65,11 +65,8 @@ jobs:
           fi
         shell: bash
 
-      - name: Restore
-        run: dotnet restore
-
       - name: Build
-        run: dotnet build --no-restore -c ${{ matrix.configuration }}
+        run: dotnet build -c ${{ matrix.configuration }}
 
       - name: Test
         run: dotnet test --no-build -c ${{ matrix.configuration }} --filter "Category!=Integration&Category!=Package" --logger "trx;LogFileName=results.trx"
