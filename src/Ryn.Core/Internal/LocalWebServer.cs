@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 
@@ -44,14 +45,14 @@ internal sealed class LocalWebServer : IAsyncDisposable
 
             builder.WebHost.ConfigureKestrel(k =>
             {
-                k.ListenLocalhost(0, o => o.UseHttps(_cert));
+                k.Listen(IPAddress.Loopback, 0, o => o.UseHttps(_cert));
             });
         }
         else
         {
             builder.WebHost.ConfigureKestrel(k =>
             {
-                k.ListenLocalhost(0);
+                k.Listen(IPAddress.Loopback, 0);
             });
         }
 
@@ -77,7 +78,12 @@ internal sealed class LocalWebServer : IAsyncDisposable
         });
 
         await _app.StartAsync().ConfigureAwait(false);
-        Url = _app.Urls.First();
+
+        var serverAddresses = _app.Services
+            .GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>()
+            .Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>();
+        Url = serverAddresses?.Addresses.First()
+            ?? throw new InvalidOperationException("Local server failed to bind to a port");
     }
 
     private async Task HandleIpcCommand(HttpContext ctx)
