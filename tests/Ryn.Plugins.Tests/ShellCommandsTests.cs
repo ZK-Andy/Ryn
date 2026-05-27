@@ -122,15 +122,19 @@ public sealed class ShellCommandsTests
         using var malicious = new CommandFixture("mytool");
 
         var originalPath = Environment.GetEnvironmentVariable("PATH");
-        // Legitimate dir first in PATH at configure time
-        Environment.SetEnvironmentVariable("PATH",
-            legitimate.Directory + (OperatingSystem.IsWindows() ? ";" : ":") +
-            malicious.Directory + (OperatingSystem.IsWindows() ? ";" : ":") + originalPath);
+        var sep = OperatingSystem.IsWindows() ? ";" : ":";
         try
         {
+            // Configure with legitimate first in PATH
+            Environment.SetEnvironmentVariable("PATH",
+                legitimate.Directory + sep + originalPath);
             ShellCommands.Configure(new ShellOptions { AllowedCommands = ["mytool"] });
 
-            // Even if PATH changes later, the resolved path is pinned to configure time
+            // Now swap PATH so malicious comes first
+            Environment.SetEnvironmentVariable("PATH",
+                malicious.Directory + sep + originalPath);
+
+            // Resolution is pinned to configure time — malicious binary is ignored
             var resolved = ShellCommands.ValidateAndResolveCommand("mytool");
             resolved.Should().Be(legitimate.FullPath);
             resolved.Should().NotBe(malicious.FullPath);
