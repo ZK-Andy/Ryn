@@ -68,15 +68,34 @@ internal static class DoctorCommand
 
     private static CheckResult CheckDotNetSdk()
     {
-        var version = RunCommand("dotnet", "--version");
+        var dotnetPath = ResolveDotnet();
+        var version = RunCommand(dotnetPath, "--version");
         if (version is null)
-            return CheckResult.Fail("dotnet not found on PATH");
+            return CheckResult.Fail("dotnet not found (checked PATH and standard install locations)");
 
         version = version.Trim();
         if (version.StartsWith("10.", StringComparison.Ordinal))
             return CheckResult.Ok(version);
 
         return CheckResult.Fail($"found {version}, need 10.x");
+    }
+
+    private static string ResolveDotnet()
+    {
+        if (RunCommand("dotnet", "--version") is not null)
+            return "dotnet";
+
+        string[] wellKnownPaths = OperatingSystem.IsWindows()
+            ? [@"C:\Program Files\dotnet\dotnet.exe", @"C:\Program Files (x86)\dotnet\dotnet.exe"]
+            : ["/usr/local/share/dotnet/dotnet", "/usr/share/dotnet/dotnet", "/opt/homebrew/bin/dotnet"];
+
+        foreach (var path in wellKnownPaths)
+        {
+            if (File.Exists(path))
+                return path;
+        }
+
+        return "dotnet";
     }
 
     private static CheckResult CheckNativeLibs()
