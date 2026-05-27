@@ -79,10 +79,7 @@ public sealed class PtyCommands : IDisposable
 
     private PtySessionWindows CreateWindowsSession(string resolvedCommand, string[] args)
     {
-        // Build the command line for CreateProcessW: "command" arg1 arg2 ...
-        var commandLine = args.Length <= 1
-            ? resolvedCommand
-            : $"{resolvedCommand} {string.Join(' ', args.AsSpan(1).ToArray())}";
+        var commandLine = QuoteWindowsCommandLine(resolvedCommand, args);
 
         var conPty = PtyNativeWindows.CreateConPty(commandLine, 80, 24);
         var pidStr = conPty.ProcessId.ToString(CultureInfo.InvariantCulture);
@@ -226,6 +223,50 @@ public sealed class PtyCommands : IDisposable
         session.Dispose();
     }
 
+    private static string QuoteWindowsCommandLine(string command, string[] args)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(QuoteWindowsArg(command));
+        for (var i = 1; i < args.Length; i++)
+        {
+            sb.Append(' ');
+            sb.Append(QuoteWindowsArg(args[i]));
+        }
+        return sb.ToString();
+    }
+
+    private static string QuoteWindowsArg(string arg)
+    {
+        if (arg.Length > 0 && !arg.AsSpan().ContainsAny(' ', '\t', '"'))
+            return arg;
+
+        var sb = new System.Text.StringBuilder(arg.Length + 2);
+        sb.Append('"');
+        var backslashes = 0;
+        foreach (var c in arg)
+        {
+            if (c == '\\')
+            {
+                backslashes++;
+            }
+            else if (c == '"')
+            {
+                sb.Append('\\', backslashes * 2 + 1);
+                sb.Append('"');
+                backslashes = 0;
+            }
+            else
+            {
+                sb.Append('\\', backslashes);
+                sb.Append(c);
+                backslashes = 0;
+            }
+        }
+        sb.Append('\\', backslashes * 2);
+        sb.Append('"');
+        return sb.ToString();
+    }
+
     public void Dispose()
     {
         foreach (var kvp in _sessions)
@@ -343,12 +384,18 @@ internal static partial class PtyNative
         argv[args.Length] = null;
 
         // Try the native shim first (no managed work after fork)
-        var result = ryn_pty_spawn(command, argv, out var masterFd, out childPid);
-        if (result == 0)
-            return masterFd;
+        try
+        {
+            var result = ryn_pty_spawn(command, argv, out var masterFd, out childPid);
+            if (result == 0)
+                return masterFd;
+        }
+        catch (EntryPointNotFoundException) { }
+        catch (DllNotFoundException) { }
 
-        // Fallback to managed forkpty if native shim is not available
-        var pid = forkpty(out masterFd, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        // Fallback to managed forkpty if native shim is not linked
+        int fallbackMasterFd;
+        var pid = forkpty(out fallbackMasterFd, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
 
         if (pid < 0)
         {
@@ -363,7 +410,7 @@ internal static partial class PtyNative
         }
 
         childPid = pid;
-        return masterFd;
+        return fallbackMasterFd;
     }
 
     [DllImport("saucer-bindings", EntryPoint = "ryn_pty_spawn", SetLastError = true,
