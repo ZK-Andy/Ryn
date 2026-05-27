@@ -95,6 +95,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
 
     // HTML content to serve from ryn://app/
     private string? _htmlContent;
+    private string? _contentDirectory;
     private readonly HashSet<string> _allowedOrigins = new(StringComparer.OrdinalIgnoreCase) { "ryn://app" };
 
     private bool _disposed;
@@ -118,6 +119,8 @@ public sealed class RynWebView : IRynWebView, IDisposable
     }
 
     internal void SetHtmlContent(string html) => _htmlContent = html;
+
+    internal void SetContentDirectory(string path) => _contentDirectory = Path.GetFullPath(path);
 
     internal unsafe void NavigateToAppScheme()
     {
@@ -308,7 +311,21 @@ public sealed class RynWebView : IRynWebView, IDisposable
             return;
         }
 
-        // Serve HTML content for /index.html or /
+        // Serve static files from content directory
+        if (_contentDirectory is not null)
+        {
+            var relativePath = (path is "/" or "") ? "index.html" : path.TrimStart('/');
+            var filePath = Path.GetFullPath(Path.Combine(_contentDirectory, relativePath));
+
+            // Path traversal guard
+            if (filePath.StartsWith(_contentDirectory, StringComparison.Ordinal) && File.Exists(filePath))
+            {
+                ServeFile(executor, filePath);
+                return;
+            }
+        }
+
+        // Serve inline HTML content for /index.html or /
         if (_htmlContent is not null && (path is "/" or "/index.html" or ""))
         {
             var htmlBytes = Encoding.UTF8.GetBytes(_htmlContent);
@@ -328,14 +345,56 @@ public sealed class RynWebView : IRynWebView, IDisposable
         Saucer.saucer_scheme_executor_reject(executor, saucer_scheme_error.SAUCER_SCHEME_ERROR_NOT_FOUND);
     }
 
+    private static unsafe void ServeFile(saucer_scheme_executor* executor, string filePath)
+    {
+        var fileBytes = File.ReadAllBytes(filePath);
+        var mimeType = GetMimeType(Path.GetExtension(filePath));
+
+        fixed (byte* ptr = fileBytes)
+        {
+            var stash = Saucer.saucer_stash_new_from(ptr, (nuint)fileBytes.Length);
+            Span<byte> mimeBuf = stackalloc byte[128];
+            var mime = Utf8String.Create(mimeType, mimeBuf);
+            var response = Saucer.saucer_scheme_response_new(stash, mime.Pointer);
+            Saucer.saucer_scheme_executor_accept(executor, response);
+            mime.Dispose();
+        }
+    }
+
+    private static string GetMimeType(string extension)
+    {
+        if (extension.Equals(".html", StringComparison.OrdinalIgnoreCase) || extension.Equals(".htm", StringComparison.OrdinalIgnoreCase)) return "text/html";
+        if (extension.Equals(".css", StringComparison.OrdinalIgnoreCase)) return "text/css";
+        if (extension.Equals(".js", StringComparison.OrdinalIgnoreCase) || extension.Equals(".mjs", StringComparison.OrdinalIgnoreCase)) return "application/javascript";
+        if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase)) return "application/json";
+        if (extension.Equals(".png", StringComparison.OrdinalIgnoreCase)) return "image/png";
+        if (extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)) return "image/jpeg";
+        if (extension.Equals(".gif", StringComparison.OrdinalIgnoreCase)) return "image/gif";
+        if (extension.Equals(".svg", StringComparison.OrdinalIgnoreCase)) return "image/svg+xml";
+        if (extension.Equals(".ico", StringComparison.OrdinalIgnoreCase)) return "image/x-icon";
+        if (extension.Equals(".woff", StringComparison.OrdinalIgnoreCase)) return "font/woff";
+        if (extension.Equals(".woff2", StringComparison.OrdinalIgnoreCase)) return "font/woff2";
+        if (extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase)) return "font/ttf";
+        if (extension.Equals(".otf", StringComparison.OrdinalIgnoreCase)) return "font/otf";
+        if (extension.Equals(".wasm", StringComparison.OrdinalIgnoreCase)) return "application/wasm";
+        if (extension.Equals(".webp", StringComparison.OrdinalIgnoreCase)) return "image/webp";
+        if (extension.Equals(".mp3", StringComparison.OrdinalIgnoreCase)) return "audio/mpeg";
+        if (extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase)) return "video/mp4";
+        if (extension.Equals(".webm", StringComparison.OrdinalIgnoreCase)) return "video/webm";
+        if (extension.Equals(".txt", StringComparison.OrdinalIgnoreCase)) return "text/plain";
+        if (extension.Equals(".xml", StringComparison.OrdinalIgnoreCase)) return "application/xml";
+        if (extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase)) return "application/pdf";
+        return "application/octet-stream";
+    }
+
     private async Task DispatchCommandAsync(long id, string command, byte[] args)
     {
         if (_commandHandler is null) return;
 
         try
         {
-            var result = await _commandHandler(command, args, CancellationToken.None)
-                .ConfigureAwait(false);
+            var result = await Task.Run(async () => await _commandHandler(command, args, CancellationToken.None)
+                .ConfigureAwait(false)).ConfigureAwait(false);
             var escaped = EscapeForJs(result);
             ExecuteOnUiThread($"window.__ryn._resolve({id},true,'{escaped}')");
         }

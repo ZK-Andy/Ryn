@@ -47,12 +47,16 @@ DESKTOP_LIB_NAME="${LIB_PREFIX}saucer-bindings-desktop${LIB_EXT}"
 echo "==> Building saucer-bindings for $RID..."
 
 GENERATOR=""
+ARCH_FLAG=""
 if command -v ninja &> /dev/null; then
     GENERATOR="-G Ninja"
+elif [[ "$OS" == MINGW* || "$OS" == MSYS* || "$OS" == CYGWIN* ]]; then
+    ARCH_FLAG="-A x64"
 fi
 
 cmake -S "$VENDOR_DIR" -B "$BUILD_DIR" \
     $GENERATOR \
+    $ARCH_FLAG \
     -DCMAKE_BUILD_TYPE=Release \
     -Dsaucer_bindings_modules="desktop;loop" \
     -Dsaucer_bindings_inline_modules="loop" \
@@ -69,6 +73,21 @@ echo "   $LIB_NAME"
 if [[ -f "$BUILD_DIR/modules/desktop/$DESKTOP_LIB_NAME" ]]; then
     cp "$BUILD_DIR/modules/desktop/$DESKTOP_LIB_NAME" "$DEST_DIR/"
     echo "   $DESKTOP_LIB_NAME"
+fi
+
+# Copy transitive native dependencies (Windows only)
+if [[ "$OS" == MINGW* || "$OS" == MSYS* || "$OS" == CYGWIN* ]]; then
+    SAUCER_DLL="$BUILD_DIR/_deps/saucer-build/Release/saucer.dll"
+    if [[ -f "$SAUCER_DLL" ]]; then
+        cp "$SAUCER_DLL" "$DEST_DIR/"
+        echo "   saucer.dll"
+    fi
+
+    WV2_DLL=$(find "$BUILD_DIR/_deps/saucer-build" -name "WebView2Loader.dll" -path "*/win-x64/*" 2>/dev/null | head -1)
+    if [[ -n "$WV2_DLL" && -f "$WV2_DLL" ]]; then
+        cp "$WV2_DLL" "$DEST_DIR/"
+        echo "   WebView2Loader.dll"
+    fi
 fi
 
 # Build ryn_pty native shim (Unix only)

@@ -33,6 +33,13 @@ public sealed partial class RynApplication : IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        if (OperatingSystem.IsWindows() && Thread.CurrentThread.GetApartmentState() != ApartmentState.STA)
+        {
+            throw new InvalidOperationException(
+                "Ryn requires [STAThread] on the entry point for Windows. " +
+                "Use '[STAThread] static void Main()' instead of top-level statements or async Main.");
+        }
+
         Log.Starting(_logger);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -72,6 +79,13 @@ public sealed partial class RynApplication : IAsyncDisposable
         Log.ShuttingDown(_logger);
 
         return ValueTask.CompletedTask;
+    }
+
+    public void Run(CancellationToken cancellationToken = default)
+    {
+#pragma warning disable CA2012 // Intentional sync-over-async: convenience wrapper for [STAThread] Main
+        RunAsync(cancellationToken).GetAwaiter().GetResult();
+#pragma warning restore CA2012
     }
 
     internal void AddPlugin(IRynPlugin plugin) => _plugins.Add(plugin);

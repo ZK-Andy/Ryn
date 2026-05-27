@@ -116,7 +116,11 @@ internal sealed class PickerCommands
                 if (error != 0 || size == 0)
                     return "[]";
 
-                var raw = Utf8String.ToManaged(buffer, (int)size);
+                int len = 0;
+                while (len < (int)size && buffer[len] != 0) len++;
+                if (len == 0) return "[]";
+
+                var raw = Utf8String.ToManaged(buffer, len);
                 var paths = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
                 var sb = new StringBuilder("[");
@@ -195,6 +199,10 @@ internal sealed class PickerCommands
         if (error != 0 || size == 0)
             return string.Empty;
 
-        return Utf8String.ToManaged(buffer, (int)size);
+        int len = 0;
+        while (len < (int)size && buffer[len] != 0) len++;
+        if (len == 0) return string.Empty;
+
+        return Utf8String.ToManaged(buffer, len);
     }
 }
