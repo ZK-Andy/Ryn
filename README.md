@@ -10,12 +10,82 @@ Ryn gives .NET developers the Tauri experience without leaving C#. Native OS web
 - **Lightweight** — Uses native OS webviews (WebView2, WKWebView, WebKitGTK), not bundled Chromium
 - **NativeAOT** — Small, fast, self-contained binaries (~4.3MB) with no runtime dependency
 - **Cross-platform** — Windows, macOS, Linux
-- **Plugin system** — FileSystem, Dialog (native pickers), Clipboard, Shell (spawn with streaming), Notification
-- **Vertical slice architecture** — Each feature is self-contained and independently testable
+- **Plugin system** — FileSystem, Dialog (native pickers), Clipboard, Shell (spawn/PTY streaming), Notification
+- **Security model** — Unified `ryn.json` capability scopes with deny-all semantics
 
 ## Status
 
-**Early development** — Not ready for production use.
+**Early development** — Actively tested on macOS. Windows and Linux build in CI but need community testing.
+
+## Getting Started (from source)
+
+### Prerequisites
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (preview)
+- [GitHub CLI](https://cli.github.com/) (`gh`) for downloading native libraries
+- Git with submodule support
+
+### macOS
+
+```bash
+git clone --recursive https://github.com/Yupmoh/Ryn.git
+cd Ryn
+bash build/download-native.sh         # downloads prebuilt saucer libs
+dotnet build Ryn.slnx
+dotnet test Ryn.slnx
+dotnet run --project samples/Showcase  # run the demo app
+```
+
+To build native libs from source (requires cmake + ninja):
+```bash
+bash build/build-native.sh
+```
+
+### Windows
+
+```powershell
+git clone --recursive https://github.com/Yupmoh/Ryn.git
+cd Ryn
+.\build\download-native.ps1           # downloads prebuilt saucer libs
+dotnet build Ryn.slnx
+dotnet test Ryn.slnx
+dotnet run --project samples\Showcase
+```
+
+### Linux
+
+```bash
+git clone --recursive https://github.com/Yupmoh/Ryn.git
+cd Ryn
+bash build/download-native.sh         # downloads prebuilt saucer libs
+dotnet build Ryn.slnx
+dotnet test Ryn.slnx
+dotnet run --project samples/Showcase
+```
+
+WebKitGTK dependencies (Ubuntu/Debian):
+```bash
+sudo apt-get install libwebkitgtk-6.0-dev
+```
+
+### Creating a new app
+
+```bash
+dotnet run --project src/Ryn.Cli -- new MyApp
+cd MyApp
+dotnet run
+```
+
+### Bundling for distribution
+
+```bash
+dotnet run --project src/Ryn.Cli -- bundle
+```
+
+This creates:
+- **macOS**: `.app` bundle with Info.plist
+- **Windows**: Self-contained folder with executable
+- **Linux**: AppDir structure (use [appimagetool](https://appimage.github.io/) to create an AppImage)
 
 ## Project Structure
 
@@ -23,36 +93,15 @@ Ryn gives .NET developers the Tauri experience without leaving C#. Native OS web
 src/
   Ryn.Core          — Window management, app lifecycle, configuration
   Ryn.Interop       — Auto-generated saucer C bindings via ClangSharp
-  Ryn.Ipc           — JavaScript ↔ C# IPC bridge with source generators
+  Ryn.Ipc           — JavaScript <> C# IPC bridge with source generators
   Ryn.Plugins.*     — Native capabilities (FileSystem, Dialog, Clipboard, Shell, Notification)
-  Ryn.Cli           — dotnet tool for scaffolding, dev, and building
-tests/              — xUnit tests for all components
-benchmarks/         — BenchmarkDotNet with allocation tracking
-examples/           — Sample applications
-docs/               — Architecture docs and project plan
-```
-
-## Quick Start
-
-```bash
-# install the CLI
-dotnet tool install --global Ryn.Cli
-
-# create a new app
-dotnet ryn new myapp
-cd myapp
-
-# run in dev mode
-dotnet ryn dev
-```
-
-## Building from Source
-
-```bash
-git clone https://github.com/user/Ryn.git
-cd Ryn
-dotnet build
-dotnet test
+  Ryn.Cli           — CLI tool for scaffolding, dev, build, bundle
+samples/
+  HelloWindow/      — Minimal IPC demo
+  Showcase/         — Full-featured demo with all plugins
+  ViteApp/          — URL-backed frontend for Vite dev server integration
+tests/              — 109 xUnit tests
+benchmarks/         — BenchmarkDotNet suites (IPC, marshaling, JSON, escaping)
 ```
 
 ## License
