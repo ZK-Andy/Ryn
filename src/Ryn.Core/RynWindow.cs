@@ -16,6 +16,7 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
     private void* _selfHandle;
 
     private RynWebView? _rynWebView;
+    private LocalWebServer? _localServer;
 
     private CommandDispatchHandler? _commandHandler;
 
@@ -226,6 +227,20 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
             Saucer.saucer_webview_set_url_str(_webview, urlStr.Pointer);
             urlStr.Dispose();
         }
+        else if (_options.UseLocalServer && _options.ContentDirectory != null)
+        {
+            _localServer = new LocalWebServer(_options.ContentDirectory, _options.UseHttps);
+            _localServer.StartAsync().GetAwaiter().GetResult();
+            _localServer.SetWebView(_rynWebView);
+
+            var serverUrl = _localServer.Url;
+            _rynWebView.SetAllowedOrigins([serverUrl.TrimEnd('/')]);
+
+            Span<byte> urlBuf = stackalloc byte[256];
+            var urlStr = Utf8String.Create(serverUrl, urlBuf);
+            Saucer.saucer_webview_set_url_str(_webview, urlStr.Pointer);
+            urlStr.Dispose();
+        }
         else if (_options.ContentDirectory != null)
         {
             _rynWebView.SetContentDirectory(_options.ContentDirectory);
@@ -324,6 +339,12 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
 
     private void DisposeNative()
     {
+        if (_localServer is not null)
+        {
+            _localServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _localServer = null;
+        }
+
         _rynWebView?.Dispose();
         _rynWebView = null;
 
@@ -356,6 +377,7 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _localServer?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _rynWebView?.Dispose();
         _closeTcs.TrySetCanceled();
     }

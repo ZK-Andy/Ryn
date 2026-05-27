@@ -27,7 +27,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
               pending[id] = { resolve: resolve, reject: reject };
               var body = args ? JSON.stringify(args) : '{}';
               var x = new XMLHttpRequest();
-              x.open('POST', 'ryn://app/ipc/cmd/' + id + '/' + encodeURIComponent(command), true);
+              x.open('POST', '/ipc/cmd/' + id + '/' + encodeURIComponent(command), true);
               x.send(body);
             });
           };
@@ -76,7 +76,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
 
           function __ryn_send(id, ok, data) {
             var x = new XMLHttpRequest();
-            x.open('POST', 'ryn://app/ipc/eval/' + id + '/' + ok, true);
+            x.open('POST', '/ipc/eval/' + id + '/' + ok, true);
             x.send(data);
           }
         })();
@@ -111,6 +111,23 @@ public sealed class RynWebView : IRynWebView, IDisposable
     }
 
     internal void SetCommandHandler(CommandDispatchHandler handler) => _commandHandler = handler;
+
+    internal void DispatchCommandFromServer(long cmdId, string command, string body)
+    {
+        var args = Encoding.UTF8.GetBytes(body);
+        _ = DispatchCommandAsync(cmdId, command, args);
+    }
+
+    internal void HandleEvalFromServer(long evalId, int ok, string body)
+    {
+        if (_pendingEvals.TryRemove(evalId, out var tcs))
+        {
+            if (ok == 1)
+                tcs.TrySetResult(body);
+            else
+                tcs.TrySetException(new JavaScriptException(body));
+        }
+    }
 
     internal void SetAllowedOrigins(List<string> origins)
     {
