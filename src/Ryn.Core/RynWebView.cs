@@ -460,7 +460,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
         return Encoding.UTF8.GetString(data, (int)size);
     }
 
-    private static string EscapeForJs(string value) =>
+    internal static string EscapeForJs(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)
              .Replace("'", "\\'", StringComparison.Ordinal)
              .Replace("\n", "\\n", StringComparison.Ordinal)
