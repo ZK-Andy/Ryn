@@ -19,9 +19,14 @@ detect_rid() {
     os="$(uname -s)"
     arch="$(uname -m)"
 
+    case "$arch" in
+        x86_64) arch="x64" ;;
+        aarch64) arch="arm64" ;;
+    esac
+
     case "$os" in
         Darwin) echo "osx-$arch" ;;
-        Linux)  echo "linux-x64" ;;
+        Linux)  echo "linux-$arch" ;;
         MINGW*|MSYS*|CYGWIN*) echo "win-x64" ;;
         *) echo "unknown"; return 1 ;;
     esac
