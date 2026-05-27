@@ -18,6 +18,7 @@ internal static class Program
             "dev" => Commands.DevCommand.Execute(args.AsSpan(1)),
             "build" => Commands.BuildCommand.Execute(args.AsSpan(1)),
             "bundle" => Commands.BundleCommand.Execute(args.AsSpan(1)),
+            "doctor" => Commands.DoctorCommand.Execute(args.AsSpan(1)),
             "--version" or "-v" => HandleVersion(),
             "--help" or "-h" => HandleHelp(),
             _ => HandleUnknown(args[0]),
@@ -56,6 +57,7 @@ internal static class Program
               dev           Run in development mode with hot reload
               build         Build for production
               bundle        Package into platform installer
+              doctor        Check development environment
 
             Options:
               -h, --help       Show help
