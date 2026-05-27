@@ -39,7 +39,7 @@ internal static class BundleCommand
         var publishDir = ResolvePublishDir(projectDir);
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return CreateMacAppBundle(projectDir, projectName, publishDir);
+            return CreateMacAppBundle(projectDir, projectName, publishDir, args);
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return CreateWindowsBundle(projectDir, projectName, publishDir);
@@ -52,7 +52,7 @@ internal static class BundleCommand
         return 0;
     }
 
-    private static int CreateMacAppBundle(string projectDir, string projectName, string publishDir)
+    private static int CreateMacAppBundle(string projectDir, string projectName, string publishDir, ReadOnlySpan<string> args)
     {
         var bundleDir = Path.Combine(projectDir, "bin", "bundle", $"{projectName}.app");
         var contentsDir = Path.Combine(bundleDir, "Contents");
@@ -66,10 +66,15 @@ internal static class BundleCommand
         Directory.CreateDirectory(macosDir);
         Directory.CreateDirectory(resourcesDir);
 
-        // Read ryn.json for bundle metadata
+        // Read ryn.json + CLI args for bundle metadata
 #pragma warning disable CA1308 // Bundle identifiers require lowercase by convention
         var bundleId = $"com.ryn.{projectName.ToLowerInvariant()}";
 #pragma warning restore CA1308
+        var bundleVersion = GetArgValue(args, "--version") ?? "1.0.0";
+        var iconPath = GetArgValue(args, "--icon");
+        var signIdentity = GetArgValue(args, "--sign");
+        var notarize = args.Contains("--notarize");
+
         var rynJsonPath = Path.Combine(projectDir, "ryn.json");
         if (File.Exists(rynJsonPath))
         {
@@ -80,6 +85,12 @@ internal static class BundleCommand
                 {
                     if (bundle.TryGetProperty("identifier", out var id))
                         bundleId = id.GetString() ?? bundleId;
+                    if (bundle.TryGetProperty("version", out var ver))
+                        bundleVersion = ver.GetString() ?? bundleVersion;
+                    if (iconPath is null && bundle.TryGetProperty("icon", out var ico))
+                        iconPath = ico.GetString();
+                    if (signIdentity is null && bundle.TryGetProperty("sign", out var sig))
+                        signIdentity = sig.GetString();
                 }
             }
             catch (JsonException) { /* use defaults */ }
@@ -87,6 +98,9 @@ internal static class BundleCommand
         }
 
         // Write Info.plist
+        var iconEntry = iconPath is not null
+            ? $"\n            <key>CFBundleIconFile</key>\n            <string>{Path.GetFileName(iconPath)}</string>"
+            : "";
         var plist = $"""
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -101,11 +115,11 @@ internal static class BundleCommand
                 <key>CFBundlePackageType</key>
                 <string>APPL</string>
                 <key>CFBundleVersion</key>
-                <string>1.0.0</string>
+                <string>{bundleVersion}</string>
                 <key>CFBundleShortVersionString</key>
-                <string>1.0.0</string>
+                <string>{bundleVersion}</string>
                 <key>NSHighResolutionCapable</key>
-                <true/>
+                <true/>{iconEntry}
             </dict>
             </plist>
             """;
@@ -143,10 +157,70 @@ internal static class BundleCommand
             }
         }
 
+        // Copy icon if specified
+        if (iconPath is not null && File.Exists(iconPath))
+        {
+            File.Copy(iconPath, Path.Combine(resourcesDir, Path.GetFileName(iconPath)), overwrite: true);
+            Console.WriteLine($"  Icon: {Path.GetFileName(iconPath)}");
+        }
+
+        // Code sign if identity specified
+        if (signIdentity is not null)
+        {
+            Console.WriteLine($"  Signing with identity: {signIdentity}");
+            var signProcess = Process.Start(new ProcessStartInfo
+            {
+                FileName = "codesign",
+                Arguments = $"--force --deep --sign \"{signIdentity}\" \"{bundleDir}\"",
+                UseShellExecute = false,
+                RedirectStandardError = true,
+            });
+            signProcess?.WaitForExit();
+            if (signProcess?.ExitCode != 0)
+                Console.Error.WriteLine("  Warning: code signing failed");
+            else
+                Console.WriteLine("  Code signing succeeded");
+        }
+
+        // Notarize if requested
+        if (notarize && signIdentity is not null)
+        {
+            Console.WriteLine("  Submitting for notarization...");
+            var zipPath = bundleDir + ".zip";
+            Process.Start("ditto", $"-c -k --keepParent \"{bundleDir}\" \"{zipPath}\"")?.WaitForExit();
+            var notarizeProcess = Process.Start(new ProcessStartInfo
+            {
+                FileName = "xcrun",
+                Arguments = $"notarytool submit \"{zipPath}\" --keychain-profile \"notarize\" --wait",
+                UseShellExecute = false,
+            });
+            notarizeProcess?.WaitForExit();
+            if (notarizeProcess?.ExitCode == 0)
+            {
+                Process.Start("xcrun", $"stapler staple \"{bundleDir}\"")?.WaitForExit();
+                Console.WriteLine("  Notarization succeeded");
+            }
+            else
+            {
+                Console.Error.WriteLine("  Warning: notarization failed");
+            }
+            File.Delete(zipPath);
+        }
+
         Console.WriteLine();
         Console.WriteLine($"  macOS app bundle created: {bundleDir}");
         Console.WriteLine($"  Run with: open \"{bundleDir}\"");
         return 0;
+    }
+
+    private static string? GetArgValue(ReadOnlySpan<string> args, string flag)
+    {
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] == flag)
+                return args[i + 1];
+        }
+        return null;
     }
 
     private static int CreateWindowsBundle(string projectDir, string projectName, string publishDir)
