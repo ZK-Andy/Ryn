@@ -47,25 +47,25 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            ls -la src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/ryn.exe
+            ls -la src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/Ryn.Cli.exe
           else
-            ls -la src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/ryn
+            ls -la src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/Ryn.Cli
           fi
 
       - name: Smoke test
         shell: bash
         run: |
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/ryn.exe --version
+            src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/Ryn.Cli.exe --version
           else
-            src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/ryn --version
+            src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/Ryn.Cli --version
           fi
 
       - name: Report binary size
         shell: bash
         run: |
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            du -sh src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/ryn.exe
+            du -sh src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/Ryn.Cli.exe
           else
-            du -sh src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/ryn
+            du -sh src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/Ryn.Cli
           fi
