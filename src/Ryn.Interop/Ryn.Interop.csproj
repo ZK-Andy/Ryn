@@ -9,6 +9,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="runtimes/**/*" Pack="true" PackagePath="runtimes" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="runtimes/**/*" Pack="true" PackagePath="runtimes" />
+    <Content Include="runtimes/**/*" CopyToOutputDirectory="PreserveNewest" Link="runtimes/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Ryn.Interop.targets" Pack="true" PackagePath="buildTransitive" />
+    <None Include="Ryn.Interop.targets" Pack="true" PackagePath="build" />
   </ItemGroup>
 </Project>

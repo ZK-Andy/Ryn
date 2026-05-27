@@ -1,0 +1,8 @@
+<Project>
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)../runtimes/**/*"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="runtimes/%(RecursiveDir)%(Filename)%(Extension)"
+             Visible="false" />
+  </ItemGroup>
+</Project>
