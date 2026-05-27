@@ -222,9 +222,9 @@ Ryn.Plugins.{Name}/
 ### Milestone 3.1 — FileSystem Plugin (Week 7) ✅ COMPLETE
 
 **Commands:**
-- [ ] `fs.readFile(path)` → `byte[]` — not implemented (only text variant)
+- [x] `fs.readFile(path)` → `string` (base64-encoded bytes)
 - [x] `fs.readTextFile(path)` → `string`
-- [ ] `fs.writeFile(path, data)` → `void` — not implemented (only text variant)
+- [x] `fs.writeFile(path, data)` → `string` (base64 input, returns resolved path)
 - [x] `fs.writeTextFile(path, text)` → `void`
 - [x] `fs.exists(path)` → `bool`
 - [x] `fs.mkdir(path)` → `void`
@@ -295,7 +295,7 @@ Ryn.Plugins.{Name}/
 **Commands:**
 - [x] `shell.execute(command, args)` → `ProcessOutput`
 - [x] `shell.open(url)` → `void` (open in default browser/app)
-- [ ] `shell.spawn(command, args)` → `ChildProcess` — not implemented (streaming output)
+- [x] `shell.spawn(command, args)` → `int` (pid, streams stdout/stderr via batched events)
 
 **Security:**
 - [x] Command allowlist in configuration (no arbitrary shell access by default)
@@ -319,7 +319,7 @@ Ryn.Plugins.{Name}/
 
 **Commands:**
 - [x] `notification.send(title, body, options)` → `void` — via osascript/notify-send/PowerShell
-- [ ] `notification.requestPermission()` → `bool` — not implemented
+- [x] `notification.requestPermission()` → `string` ("granted"/"denied")
 - [x] `notification.isSupported()` → `bool`
 
 **Deliverables:**
@@ -329,7 +329,7 @@ Ryn.Plugins.{Name}/
 
 **Notes:**
 - Uses platform shell commands, not native API integration (UNUserNotification, etc.)
-- Permission request/check not implemented
+- [x] Permission request/check via `notification.requestPermission()`
 
 **Tests:**
 - [ ] Notification sends without crash on all platforms

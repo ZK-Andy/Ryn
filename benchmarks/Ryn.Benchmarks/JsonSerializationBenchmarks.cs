@@ -68,13 +68,33 @@ public class JsonSerializationBenchmarks
         return JsonSerializer.Serialize(_escapeInput, BenchmarkJsonContext.Default.String);
     }
 
-    // Mirrors the __ToJson pattern emitted by the source generator
-    private static string ToJson(string value) =>
-        "\"" + value
-            .Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+    private static string ToJson(string value)
+    {
+        var sb = new StringBuilder(value.Length + 2);
+        sb.Append('"');
+        foreach (var c in value)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '"': sb.Append("\\\""); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
+                default:
+                    if (c < ' ' || c == (char)0x2028 || c == (char)0x2029)
+                        sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"\\u{(int)c:X4}");
+                    else
+                        sb.Append(c);
+                    break;
+            }
+        }
+        sb.Append('"');
+        return sb.ToString();
+    }
 }
 
 [JsonSerializable(typeof(string))]
 internal sealed partial class BenchmarkJsonContext : JsonSerializerContext;
-
