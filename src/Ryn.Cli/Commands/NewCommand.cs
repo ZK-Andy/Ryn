@@ -34,13 +34,22 @@ internal static class NewCommand
         Directory.CreateDirectory(targetDir);
         Directory.CreateDirectory(Path.Combine(targetDir, "wwwroot"));
 
-        File.WriteAllText(Path.Combine(targetDir, $"{name}.csproj"), GetCsproj(name));
+        File.WriteAllText(Path.Combine(targetDir, $"{name}.csproj"), GetCsproj(name, targetDir));
         File.WriteAllText(Path.Combine(targetDir, "Program.cs"), GetProgramCs(name));
         File.WriteAllText(Path.Combine(targetDir, "Commands.cs"), GetCommandsCs(name));
         File.WriteAllText(Path.Combine(targetDir, "wwwroot", "index.html"), GetIndexHtml(name));
         File.WriteAllText(Path.Combine(targetDir, "appsettings.json"), GetAppSettings(name));
         File.WriteAllText(Path.Combine(targetDir, "ryn.json"), GetRynJson());
 
+        var sourceRoot = FindRynSourceRoot();
+        if (sourceRoot is not null)
+        {
+            Console.WriteLine("  Using project references (Ryn source detected)");
+        }
+        else
+        {
+            Console.WriteLine("  Using NuGet package references (Ryn packages not yet published — run from within the Ryn repo for project references)");
+        }
         Console.WriteLine("  Created project files");
 
         // Run dotnet restore
@@ -70,34 +79,65 @@ internal static class NewCommand
         name.Length > 0 && char.IsLetter(name[0]) &&
         name.All(c => char.IsLetterOrDigit(c) || c == '_');
 
-    private static string GetCsproj(string name) => $"""
-        <Project Sdk="Microsoft.NET.Sdk">
-          <PropertyGroup>
-            <OutputType>Exe</OutputType>
-            <TargetFramework>net10.0</TargetFramework>
-            <Nullable>enable</Nullable>
-            <ImplicitUsings>enable</ImplicitUsings>
-            <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-            <RootNamespace>{name}</RootNamespace>
-          </PropertyGroup>
+    private static string? FindRynSourceRoot()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir, "Ryn.slnx")))
+                return dir;
+            dir = Path.GetDirectoryName(dir);
+        }
+        return null;
+    }
 
-          <ItemGroup>
-            <Content Include="wwwroot/**" CopyToOutputDirectory="PreserveNewest" />
-            <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
-            <Content Include="ryn.json" CopyToOutputDirectory="PreserveNewest" />
-          </ItemGroup>
+    private static string GetCsproj(string name, string targetDir)
+    {
+        var sourceRoot = FindRynSourceRoot();
+        string references;
 
-          <!--
-            TODO: Replace with NuGet package references when Ryn is published:
-            <PackageReference Include="Ryn.Core" Version="0.1.0-alpha.1" />
-            <PackageReference Include="Ryn.Ipc" Version="0.1.0-alpha.1" />
-          -->
-          <ItemGroup>
-            <PackageReference Include="Ryn.Core" Version="0.1.0-alpha.1" />
-            <PackageReference Include="Ryn.Ipc" Version="0.1.0-alpha.1" />
-          </ItemGroup>
-        </Project>
-        """;
+        if (sourceRoot is not null)
+        {
+            var src = Path.GetFullPath(Path.Combine(sourceRoot, "src"));
+            references = $"""
+                  <ItemGroup>
+                    <ProjectReference Include="{src}/Ryn.Core/Ryn.Core.csproj" />
+                    <ProjectReference Include="{src}/Ryn.Ipc/Ryn.Ipc.csproj" />
+                    <ProjectReference Include="{src}/Ryn.Ipc.Generator/Ryn.Ipc.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+                  </ItemGroup>
+              """;
+        }
+        else
+        {
+            references = """
+                  <ItemGroup>
+                    <PackageReference Include="Ryn.Core" Version="0.1.0-alpha.1" />
+                    <PackageReference Include="Ryn.Ipc" Version="0.1.0-alpha.1" />
+                  </ItemGroup>
+              """;
+        }
+
+        return $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <OutputType>Exe</OutputType>
+                <TargetFramework>net10.0</TargetFramework>
+                <Nullable>enable</Nullable>
+                <ImplicitUsings>enable</ImplicitUsings>
+                <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+                <RootNamespace>{name}</RootNamespace>
+              </PropertyGroup>
+
+              <ItemGroup>
+                <Content Include="wwwroot/**" CopyToOutputDirectory="PreserveNewest" />
+                <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+                <Content Include="ryn.json" CopyToOutputDirectory="PreserveNewest" />
+              </ItemGroup>
+
+            {references}
+            </Project>
+            """;
+    }
 
     private static string GetProgramCs(string name) => $$"""
         using Ryn.Core;
