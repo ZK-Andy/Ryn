@@ -27,7 +27,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
               pending[id] = { resolve: resolve, reject: reject };
               var body = args ? JSON.stringify(args) : '{}';
               var x = new XMLHttpRequest();
-              x.open('POST', '/ipc/cmd/' + id + '/' + encodeURIComponent(command), true);
+              x.open('POST', 'ryn://app/ipc/cmd/' + id + '/' + encodeURIComponent(command), true);
               x.send(body);
             });
           };
@@ -76,7 +76,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
 
           function __ryn_send(id, ok, data) {
             var x = new XMLHttpRequest();
-            x.open('POST', '/ipc/eval/' + id + '/' + ok, true);
+            x.open('POST', 'ryn://app/ipc/eval/' + id + '/' + ok, true);
             x.send(data);
           }
         })();
@@ -243,6 +243,14 @@ public sealed class RynWebView : IRynWebView, IDisposable
         var url = Saucer.saucer_scheme_request_url(request);
         var path = SaucerStringReader.ReadUrlPath(url);
         Saucer.saucer_url_free(url);
+
+        // CORS preflight for cross-origin dev server requests
+        var method = SaucerStringReader.ReadRequestMethod(request);
+        if (string.Equals(method, "OPTIONS", StringComparison.OrdinalIgnoreCase))
+        {
+            AcceptCorsPreflightResponse(executor);
+            return;
+        }
 
         var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
@@ -433,13 +441,30 @@ public sealed class RynWebView : IRynWebView, IDisposable
         mime.Dispose();
     }
 
+    private static unsafe void AcceptCorsPreflightResponse(saucer_scheme_executor* executor)
+    {
+        var emptyStash = Saucer.saucer_stash_new_empty();
+        Span<byte> mimeBuf = stackalloc byte[16];
+        var mime = Utf8String.Create("text/plain", mimeBuf);
+        var response = Saucer.saucer_scheme_response_new(emptyStash, mime.Pointer);
+        AppendCorsHeaders(response);
+        AppendHeader(response, "Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+        AppendHeader(response, "Access-Control-Allow-Headers", "Content-Type");
+        Saucer.saucer_scheme_executor_accept(executor, response);
+        mime.Dispose();
+    }
+
     private static unsafe void AppendCorsHeaders(saucer_scheme_response* response)
     {
-        Span<byte> hdrBuf = stackalloc byte[64];
-        Span<byte> valBuf = stackalloc byte[8];
+        AppendHeader(response, "Access-Control-Allow-Origin", "*");
+    }
 
-        var hdr = Utf8String.Create("Access-Control-Allow-Origin", hdrBuf);
-        var val = Utf8String.Create("*", valBuf);
+    private static unsafe void AppendHeader(saucer_scheme_response* response, string name, string value)
+    {
+        Span<byte> hdrBuf = stackalloc byte[64];
+        Span<byte> valBuf = stackalloc byte[64];
+        var hdr = Utf8String.Create(name, hdrBuf);
+        var val = Utf8String.Create(value, valBuf);
         Saucer.saucer_scheme_response_append_header(response, hdr.Pointer, val.Pointer);
         hdr.Dispose();
         val.Dispose();
