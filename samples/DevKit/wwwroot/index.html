@@ -230,10 +230,11 @@ async function termExec() {
   termAppend('$ ' + cmd + '\n', 'cmd-echo');
 
   try {
-    var result = await R.invoke('shell.execute', {
+    var raw = await R.invoke('shell.execute', {
       command: command,
       argsJson: JSON.stringify(args)
     });
+    var result = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (result.stdout) termAppend(result.stdout, 'stdout');
     if (result.stderr) termAppend(result.stderr, 'stderr');
     termAppend('exit ' + result.exitCode + '\n', 'exit-code');
@@ -261,7 +262,8 @@ async function loadDir(path) {
   try {
     currentDir = path;
     document.getElementById('filePath').textContent = path;
-    var entries = await R.invoke('fs.readDir', { path: path });
+    var raw = await R.invoke('fs.readDir', { path: path });
+    var entries = typeof raw === 'string' ? JSON.parse(raw) : raw;
     var list = document.getElementById('fileEntries');
     list.innerHTML = '';
 
@@ -298,7 +300,8 @@ async function previewFile(entry) {
   if (!R) return;
   document.getElementById('previewHeader').textContent = entry.name + ' (' + formatSize(entry.size) + ')';
   try {
-    var stat = await R.invoke('fs.stat', { path: entry.path });
+    var rawStat = await R.invoke('fs.stat', { path: entry.path });
+    var stat = typeof rawStat === 'string' ? JSON.parse(rawStat) : rawStat;
     var content = await R.invoke('fs.readTextFile', { path: entry.path });
     var lines = content.split('\n');
     var html = '<div class="code-view">';
@@ -363,7 +366,7 @@ async function runCmd(idx) {
   try {
     var args = JSON.parse(argsText);
     var t0 = performance.now();
-    var result = await R.invoke(cmd.name, args);
+    var result = safeParse(await R.invoke(cmd.name, args));
     var elapsed = (performance.now() - t0).toFixed(2);
     resultEl.textContent = JSON.stringify(result, null, 2);
     resultEl.style.color = 'var(--green)';
@@ -393,7 +396,8 @@ async function loadSystem() {
     '<pre id="dlgResult" style="min-height:30px;margin-top:8px">click a button</pre></div>';
 
   try {
-    var info = await R.invoke('devkit.systemInfo');
+    var rawInfo = await R.invoke('devkit.systemInfo');
+    var info = typeof rawInfo === 'string' ? JSON.parse(rawInfo) : rawInfo;
     document.getElementById('sysInfo').innerHTML =
       '<div class="kv"><span class="k">Machine</span><span class="v">' + esc(info.machineName) + '</span></div>' +
       '<div class="kv"><span class="k">OS</span><span class="v">' + esc(info.os) + '</span></div>' +
@@ -426,7 +430,8 @@ async function dlgSave() { try { var r = await R.invoke('dialog.save', { initial
 setInterval(async function() {
   if (!R) return;
   try {
-    var m = await R.invoke('shell.metrics');
+    var raw = await R.invoke('shell.metrics');
+    var m = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (m && m.length > 0) {
       var t = m.reduce(function(a, b) { return { added: (a.added||0) + b.added, flushed: (a.flushed||0) + b.flushed, dropped: (a.dropped||0) + b.dropped }; }, {});
       document.getElementById('termMetrics').textContent = 'processes: ' + m.length + '  added: ' + t.added + '  flushed: ' + t.flushed + '  dropped: ' + t.dropped;
@@ -438,6 +443,7 @@ setInterval(async function() {
 
 // ============ UTILITIES ============
 function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function safeParse(v) { if (typeof v === 'string') { try { return JSON.parse(v); } catch(e) { return v; } } return v; }
 function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';

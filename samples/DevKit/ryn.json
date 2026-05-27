@@ -1,5 +1,6 @@
 {
   "capabilities": {
+    "devkit": true,
     "fs": {
       "allow": ["readTextFile", "readFile", "writeTextFile", "readDir", "stat", "exists", "mkdir"],
       "scope": ["$APP_DATA"]
