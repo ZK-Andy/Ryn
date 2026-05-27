@@ -318,6 +318,7 @@ internal static class Emitter
     {
         if (cmd.IsReturnArray)
         {
+            sb.AppendLine("                if (__result is null) return \"null\";");
             EmitArraySerializer(sb, cmd.ReturnArrayElementSpecialType);
         }
         else if (cmd.IsReturnNullable)
