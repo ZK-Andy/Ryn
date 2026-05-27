@@ -100,7 +100,7 @@ samples/
   HelloWindow/      — Minimal IPC demo
   Showcase/         — Full-featured demo with all plugins
   ViteApp/          — URL-backed frontend for Vite dev server integration
-tests/              — 109 xUnit tests
+tests/              — 125+ xUnit tests
 benchmarks/         — BenchmarkDotNet suites (IPC, marshaling, JSON, escaping)
 ```
 
