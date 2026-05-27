@@ -162,7 +162,16 @@ internal static class Emitter
         sb.AppendLine("    }");
         sb.AppendLine();
         sb.AppendLine("    private static string __ToJson(string value) =>");
-        sb.AppendLine("        \"\\\"\" + value.Replace(\"\\\\\", \"\\\\\\\\\", System.StringComparison.Ordinal).Replace(\"\\\"\", \"\\\\\\\"\", System.StringComparison.Ordinal) + \"\\\"\";");
+        sb.AppendLine("        \"\\\"\" + value");
+        sb.AppendLine("            .Replace(\"\\\\\", \"\\\\\\\\\", System.StringComparison.Ordinal)");
+        sb.AppendLine("            .Replace(\"\\\"\", \"\\\\\\\"\", System.StringComparison.Ordinal)");
+        sb.AppendLine("            .Replace(\"\\n\", \"\\\\n\", System.StringComparison.Ordinal)");
+        sb.AppendLine("            .Replace(\"\\r\", \"\\\\r\", System.StringComparison.Ordinal)");
+        sb.AppendLine("            .Replace(\"\\t\", \"\\\\t\", System.StringComparison.Ordinal)");
+        sb.AppendLine("            .Replace(\"\\0\", \"\\\\u0000\", System.StringComparison.Ordinal)");
+        sb.AppendLine("            .Replace(\"\\u2028\", \"\\\\u2028\", System.StringComparison.Ordinal)");
+        sb.AppendLine("            .Replace(\"\\u2029\", \"\\\\u2029\", System.StringComparison.Ordinal)");
+        sb.AppendLine("        + \"\\\"\";");
         sb.AppendLine("}");
     }
 
