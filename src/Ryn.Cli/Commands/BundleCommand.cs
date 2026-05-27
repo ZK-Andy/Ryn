@@ -36,6 +36,17 @@ internal static class BundleCommand
             return 1;
         }
 
+        var targetRid = GetArgValue(args, "--rid");
+        if (targetRid is not null && !targetRid.StartsWith(
+                RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "osx" :
+                RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "win" : "linux",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine($"  Cross-platform bundling is not supported. Cannot bundle for '{targetRid}' on {RuntimeInformation.RuntimeIdentifier}.");
+            Console.Error.WriteLine("  Build the bundle on the target platform, or use CI to produce platform-specific bundles.");
+            return 1;
+        }
+
         var publishDir = ResolvePublishDir(projectDir);
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
