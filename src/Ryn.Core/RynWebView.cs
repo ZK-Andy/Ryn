@@ -254,10 +254,15 @@ public sealed class RynWebView : IRynWebView, IDisposable
         var requestOrigin = ParseRequestOrigin(request);
         var matchedOrigin = ResolveAllowedOrigin(requestOrigin);
 
-        // CORS preflight for cross-origin dev server requests
+        // CORS preflight — reject if origin is explicitly disallowed
         var method = SaucerStringReader.ReadRequestMethod(request);
         if (string.Equals(method, "OPTIONS", StringComparison.OrdinalIgnoreCase))
         {
+            if (matchedOrigin is null && requestOrigin is not null)
+            {
+                Saucer.saucer_scheme_executor_reject(executor, saucer_scheme_error.SAUCER_SCHEME_ERROR_FAILED);
+                return;
+            }
             AcceptCorsPreflightResponse(executor, matchedOrigin);
             return;
         }
@@ -467,7 +472,6 @@ public sealed class RynWebView : IRynWebView, IDisposable
         AppendCorsHeaders(response, matchedOrigin);
         AppendHeader(response, "Access-Control-Allow-Methods", "POST, GET, OPTIONS");
         AppendHeader(response, "Access-Control-Allow-Headers", "Content-Type");
-        AppendHeader(response, "Vary", "Origin");
         Saucer.saucer_scheme_executor_accept(executor, response);
         mime.Dispose();
     }
