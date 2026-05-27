@@ -74,8 +74,14 @@ public sealed class PtyCommands : IDisposable
             return false;
 
         var bytes = Convert.FromBase64String(base64Data);
-        var written = PtyNative.Write(session.MasterFd, bytes, bytes.Length);
-        return written >= 0;
+        var remaining = bytes;
+        while (remaining.Length > 0)
+        {
+            var written = PtyNative.Write(session.MasterFd, remaining, remaining.Length);
+            if (written <= 0) return false;
+            remaining = remaining[written..];
+        }
+        return true;
     }
 
     [RynCommand("shell.ptyResize")]
@@ -133,16 +139,18 @@ public sealed class PtyCommands : IDisposable
         }
     }
 
-    private static void CleanupSession(PtySession session, int pid)
+    private void CleanupSession(PtySession session, int pid)
     {
         session.Cts.Cancel();
 
-        // Kill the child process
         _ = PtyNative.Kill(session.ChildPid, 9); // SIGKILL
 
         session.StdoutBatcher.FlushNow();
 
-        _ = PtyNative.WaitForExit(session.ChildPid);
+        var exitCode = PtyNative.WaitForExit(session.ChildPid);
+        var pidStr = pid.ToString(CultureInfo.InvariantCulture);
+        _webView.EmitEvent($"shell.pty.exit.{pidStr}",
+            exitCode.ToString(CultureInfo.InvariantCulture));
 
         session.Dispose();
     }
