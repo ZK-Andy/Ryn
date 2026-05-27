@@ -11,7 +11,7 @@ namespace Ryn.Plugins.Shell;
 public sealed class PtyCommands : IDisposable
 {
     private readonly IRynWebView _webView;
-    private readonly ConcurrentDictionary<int, PtySession> _sessions = new();
+    private readonly ConcurrentDictionary<int, IPtySession> _sessions = new();
 
     public PtyCommands(IRynWebView webView)
     {
@@ -21,10 +21,6 @@ public sealed class PtyCommands : IDisposable
     [RynCommand("shell.pty")]
     public int Pty(string command, string argsJson)
     {
-        if (OperatingSystem.IsWindows())
-            throw new PlatformNotSupportedException(
-                "PTY is not supported on Windows yet. ConPTY integration is planned for a future release.");
-
         var resolvedCommand = ShellCommands.ValidateAndResolveCommand(command);
 
         string[] args;
@@ -47,24 +43,56 @@ public sealed class PtyCommands : IDisposable
             }
         }
 
-        var masterFd = PtyNative.ForkWithPty(resolvedCommand, args, out var childPid);
+        IPtySession session;
+
+        if (OperatingSystem.IsWindows())
+        {
+            session = CreateWindowsSession(resolvedCommand, args);
+        }
+        else
+        {
+            session = CreateUnixSession(resolvedCommand, args);
+        }
+
+        var childPid = session.ChildPid;
+        _sessions[childPid] = session;
 
         var pidStr = childPid.ToString(CultureInfo.InvariantCulture);
+        var token = session.Cts.Token;
+        _ = Task.Run(() => ReadLoop(session, pidStr, token), CancellationToken.None);
 
-#pragma warning disable CA2000 // Batcher + CTS are owned by PtySession, disposed in exit/kill/Dispose
+        return childPid;
+    }
+
+    private PtySessionUnix CreateUnixSession(string resolvedCommand, string[] args)
+    {
+        var masterFd = PtyNative.ForkWithPty(resolvedCommand, args, out var childPid);
+        var pidStr = childPid.ToString(CultureInfo.InvariantCulture);
+
+#pragma warning disable CA2000 // Batcher + CTS are owned by PtySessionUnix, disposed in exit/kill/Dispose
         var stdoutBatcher = new EventBatcher(_webView, $"shell.pty.stdout.{pidStr}");
         var cts = new CancellationTokenSource();
 #pragma warning restore CA2000
 
-        var session = new PtySession(childPid, masterFd, stdoutBatcher, cts);
-        _sessions[childPid] = session;
+        return new PtySessionUnix(childPid, masterFd, stdoutBatcher, cts);
+    }
 
-        // Background read loop: reads raw bytes from the PTY master fd,
-        // base64-encodes them, and pushes through EventBatcher.
-        var token = cts.Token;
-        _ = Task.Run(() => ReadLoop(session, pidStr, token), CancellationToken.None);
+    private PtySessionWindows CreateWindowsSession(string resolvedCommand, string[] args)
+    {
+        // Build the command line for CreateProcessW: "command" arg1 arg2 ...
+        var commandLine = args.Length <= 1
+            ? resolvedCommand
+            : $"{resolvedCommand} {string.Join(' ', args.AsSpan(1).ToArray())}";
 
-        return childPid;
+        var conPty = PtyNativeWindows.CreateConPty(commandLine, 80, 24);
+        var pidStr = conPty.ProcessId.ToString(CultureInfo.InvariantCulture);
+
+#pragma warning disable CA2000 // Batcher + CTS are owned by PtySessionWindows, disposed in exit/kill/Dispose
+        var stdoutBatcher = new EventBatcher(_webView, $"shell.pty.stdout.{pidStr}");
+        var cts = new CancellationTokenSource();
+#pragma warning restore CA2000
+
+        return new PtySessionWindows(conPty, stdoutBatcher, cts);
     }
 
     [RynCommand("shell.ptyWrite")]
@@ -77,7 +105,13 @@ public sealed class PtyCommands : IDisposable
         var offset = 0;
         while (offset < bytes.Length)
         {
-            var written = PtyNative.Write(session.MasterFd, bytes, offset, bytes.Length - offset);
+            int written;
+            if (session is PtySessionWindows winSession)
+                written = PtyNativeWindows.Write(
+                    winSession.ConPty.InputWriteHandle, bytes, offset, bytes.Length - offset);
+            else
+                written = PtyNative.Write(((PtySessionUnix)session).MasterFd, bytes, offset, bytes.Length - offset);
+
             if (written <= 0) return false;
             offset += written;
         }
@@ -90,7 +124,27 @@ public sealed class PtyCommands : IDisposable
         if (!_sessions.TryGetValue(pid, out var session))
             return false;
 
-        return PtyNative.SetWindowSize(session.MasterFd, (ushort)rows, (ushort)cols);
+        if (session is PtySessionWindows winSession)
+            return PtyNativeWindows.Resize(winSession.ConPty.PseudoConsole, (ushort)cols, (ushort)rows);
+
+        return PtyNative.SetWindowSize(((PtySessionUnix)session).MasterFd, (ushort)rows, (ushort)cols);
+    }
+
+    [RynCommand("shell.ptyMetrics")]
+    public string PtyMetrics()
+    {
+        var entries = new List<ProcessMetrics>();
+        foreach (var kvp in _sessions)
+        {
+            var pid = kvp.Key;
+            var s = kvp.Value;
+            entries.Add(new ProcessMetrics(
+                pid,
+                s.StdoutBatcher.AddedCount,
+                s.StdoutBatcher.FlushedCount,
+                s.StdoutBatcher.DroppedCount));
+        }
+        return JsonSerializer.Serialize(entries, ShellJsonContext.Default.ListProcessMetrics);
     }
 
     [RynCommand("shell.ptyKill")]
@@ -103,7 +157,7 @@ public sealed class PtyCommands : IDisposable
         return true;
     }
 
-    private void ReadLoop(PtySession session, string pidStr, CancellationToken token)
+    private void ReadLoop(IPtySession session, string pidStr, CancellationToken token)
     {
         var buf = new byte[4096];
 
@@ -111,7 +165,11 @@ public sealed class PtyCommands : IDisposable
         {
             while (!token.IsCancellationRequested)
             {
-                var bytesRead = PtyNative.Read(session.MasterFd, buf, buf.Length);
+                int bytesRead;
+                if (session is PtySessionWindows winSession)
+                    bytesRead = PtyNativeWindows.Read(winSession.ConPty.OutputReadHandle, buf, buf.Length);
+                else
+                    bytesRead = PtyNative.Read(((PtySessionUnix)session).MasterFd, buf, buf.Length);
 
                 if (bytesRead <= 0)
                     break; // EOF or error — child exited
@@ -131,7 +189,12 @@ public sealed class PtyCommands : IDisposable
         {
             session.StdoutBatcher.FlushNow();
 
-            var exitCode = PtyNative.WaitForExit(session.ChildPid);
+            int exitCode;
+            if (session is PtySessionWindows winSession)
+                exitCode = PtyNativeWindows.WaitForExit(winSession.ConPty.ProcessHandle);
+            else
+                exitCode = PtyNative.WaitForExit(session.ChildPid);
+
             var exitCodeStr = exitCode.ToString(CultureInfo.InvariantCulture);
             _webView.EmitEvent($"shell.pty.exit.{pidStr}", exitCodeStr);
 
@@ -139,15 +202,23 @@ public sealed class PtyCommands : IDisposable
         }
     }
 
-    private void CleanupSession(PtySession session, int pid)
+    private void CleanupSession(IPtySession session, int pid)
     {
         session.Cts.Cancel();
 
-        _ = PtyNative.Kill(session.ChildPid, 9); // SIGKILL
+        if (session is PtySessionWindows winSession)
+            PtyNativeWindows.Kill(winSession.ConPty.ProcessHandle);
+        else
+            _ = PtyNative.Kill(session.ChildPid, 9); // SIGKILL
 
         session.StdoutBatcher.FlushNow();
 
-        var exitCode = PtyNative.WaitForExit(session.ChildPid);
+        int exitCode;
+        if (session is PtySessionWindows winSess)
+            exitCode = PtyNativeWindows.WaitForExit(winSess.ConPty.ProcessHandle);
+        else
+            exitCode = PtyNative.WaitForExit(session.ChildPid);
+
         var pidStr = pid.ToString(CultureInfo.InvariantCulture);
         _webView.EmitEvent($"shell.pty.exit.{pidStr}",
             exitCode.ToString(CultureInfo.InvariantCulture));
@@ -165,7 +236,17 @@ public sealed class PtyCommands : IDisposable
     }
 }
 
-internal sealed record PtySession(int ChildPid, int MasterFd, EventBatcher StdoutBatcher, CancellationTokenSource Cts) : IDisposable
+/// <summary>
+/// Common interface for Unix and Windows PTY sessions.
+/// </summary>
+internal interface IPtySession : IDisposable
+{
+    public int ChildPid { get; }
+    public EventBatcher StdoutBatcher { get; }
+    public CancellationTokenSource Cts { get; }
+}
+
+internal sealed record PtySessionUnix(int ChildPid, int MasterFd, EventBatcher StdoutBatcher, CancellationTokenSource Cts) : IPtySession
 {
     public void Dispose()
     {
@@ -175,9 +256,31 @@ internal sealed record PtySession(int ChildPid, int MasterFd, EventBatcher Stdou
     }
 }
 
+internal sealed class PtySessionWindows : IPtySession
+{
+    public PtyNativeWindows.ConPtySession ConPty { get; }
+    public int ChildPid => ConPty.ProcessId;
+    public EventBatcher StdoutBatcher { get; }
+    public CancellationTokenSource Cts { get; }
+
+    internal PtySessionWindows(PtyNativeWindows.ConPtySession conPty, EventBatcher stdoutBatcher, CancellationTokenSource cts)
+    {
+        ConPty = conPty;
+        StdoutBatcher = stdoutBatcher;
+        Cts = cts;
+    }
+
+    public void Dispose()
+    {
+        Cts.Dispose();
+        StdoutBatcher.Dispose();
+        ConPty.Dispose();
+    }
+}
+
 /// <summary>
 /// Platform-specific PTY operations via P/Invoke to libc.
-/// macOS and Linux only. Windows requires ConPTY (not yet implemented).
+/// macOS and Linux only.
 /// </summary>
 internal static partial class PtyNative
 {
