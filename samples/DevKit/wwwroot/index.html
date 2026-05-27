@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Ryn DevKit</title>
+<style>
+:root {
+  --bg-base: #0f0f17; --bg-surface: #161622; --bg-overlay: #1c1c2e;
+  --bg-active: #252540; --border: #2a2a45; --border-active: #3a3a60;
+  --text: #e0e0f0; --text-dim: #7a7a9a; --text-muted: #505070;
+  --accent: #7c3aed; --accent-hover: #6d28d9; --accent-dim: #4c1d95;
+  --green: #22c55e; --green-dim: #064e3b; --red: #ef4444; --red-dim: #7f1d1d;
+  --yellow: #eab308; --yellow-dim: #713f12; --blue: #3b82f6; --cyan: #06b6d4;
+  --mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --radius: 8px; --radius-lg: 12px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--sans); background: var(--bg-base); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
+
+/* Top bar */
+.topbar { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 0 16px; height: 44px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.topbar .logo { font-weight: 700; font-size: 15px; color: var(--accent); letter-spacing: -0.5px; }
+.topbar .sep { width: 1px; height: 20px; background: var(--border); }
+.topbar .status { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+.topbar .status.ok { color: var(--green); }
+.topbar .status.err { color: var(--red); }
+.topbar .metrics { margin-left: auto; font-size: 10px; color: var(--text-muted); font-family: var(--mono); }
+
+/* Tabs */
+.tabs { background: var(--bg-surface); border-bottom: 1px solid var(--border); display: flex; gap: 0; flex-shrink: 0; padding: 0 8px; }
+.tab { padding: 10px 18px; font-size: 12px; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; user-select: none; }
+.tab:hover { color: var(--text); background: var(--bg-overlay); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Content */
+.content { flex: 1; overflow: hidden; display: flex; }
+.panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+.panel.active { display: flex; }
+
+/* Shared components */
+.card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
+.card h3 { font-size: 13px; color: var(--accent); margin-bottom: 10px; font-weight: 600; }
+.btn { padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-overlay); color: var(--text); cursor: pointer; font-size: 12px; transition: all 0.15s; font-family: var(--sans); }
+.btn:hover { background: var(--bg-active); border-color: var(--border-active); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.sm { padding: 4px 10px; font-size: 11px; }
+.btn.danger { border-color: var(--red); color: var(--red); }
+.btn.danger:hover { background: var(--red-dim); }
+input, textarea, select { background: var(--bg-overlay); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: var(--radius); font-size: 12px; font-family: var(--mono); outline: none; }
+input:focus, textarea:focus { border-color: var(--accent); }
+.row { display: flex; gap: 8px; align-items: center; }
+.grid { display: grid; gap: 12px; padding: 16px; overflow-y: auto; }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-family: var(--mono); }
+.tag.ok { background: var(--green-dim); color: var(--green); }
+.tag.warn { background: var(--yellow-dim); color: var(--yellow); }
+.tag.err { background: var(--red-dim); color: var(--red); }
+.mono { font-family: var(--mono); font-size: 12px; }
+pre { background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; font-family: var(--mono); font-size: 11px; overflow: auto; white-space: pre-wrap; word-break: break-all; max-height: 200px; }
+.kv { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.kv:last-child { border-bottom: none; }
+.kv .k { color: var(--text-dim); font-size: 11px; }
+.kv .v { font-family: var(--mono); font-size: 11px; }
+.scroll { overflow-y: auto; flex: 1; }
+
+/* Terminal panel */
+.terminal-wrap { display: flex; flex-direction: column; flex: 1; }
+.terminal-output { flex: 1; background: var(--bg-base); padding: 8px 12px; font-family: var(--mono); font-size: 12px; overflow-y: auto; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+.terminal-input { display: flex; gap: 8px; padding: 8px 12px; background: var(--bg-surface); border-top: 1px solid var(--border); }
+.terminal-input input { flex: 1; }
+.stdout { color: var(--green); }
+.stderr { color: var(--red); }
+.cmd-echo { color: var(--blue); }
+.exit-code { color: var(--text-muted); font-size: 11px; }
+.metrics-bar { padding: 4px 12px; background: var(--bg-overlay); border-top: 1px solid var(--border); font-size: 10px; color: var(--text-muted); font-family: var(--mono); display: flex; gap: 16px; }
+
+/* File explorer */
+.explorer { display: flex; flex: 1; overflow: hidden; }
+.file-list { width: 340px; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+.file-list .path-bar { padding: 8px 12px; background: var(--bg-surface); border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--text-dim); display: flex; gap: 6px; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-list .entries { flex: 1; overflow-y: auto; }
+.file-entry { padding: 6px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--bg-overlay); }
+.file-entry:hover { background: var(--bg-overlay); }
+.file-entry.active { background: var(--bg-active); border-left: 2px solid var(--accent); }
+.file-entry .icon { width: 16px; text-align: center; }
+.file-entry .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-entry .size { color: var(--text-muted); font-size: 10px; font-family: var(--mono); }
+.file-preview { flex: 1; display: flex; flex-direction: column; }
+.file-preview .preview-header { padding: 8px 12px; background: var(--bg-surface); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-dim); }
+.file-preview .preview-content { flex: 1; overflow: auto; padding: 12px; }
+.code-view { font-family: var(--mono); font-size: 12px; line-height: 1.6; counter-reset: line; }
+.code-view .line { display: flex; }
+.code-view .line:hover { background: var(--bg-overlay); }
+.code-view .ln { color: var(--text-muted); min-width: 40px; text-align: right; padding-right: 12px; user-select: none; border-right: 1px solid var(--border); margin-right: 12px; }
+
+/* IPC Playground */
+.playground { padding: 16px; display: flex; gap: 16px; flex: 1; overflow: hidden; }
+.playground .commands { width: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.cmd-item { padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
+.cmd-item:hover { border-color: var(--border-active); }
+.cmd-item.active { border-color: var(--accent); background: var(--bg-overlay); }
+.cmd-item .cmd-name { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+.cmd-item .cmd-desc { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.playground .detail { flex: 1; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+
+/* System panel */
+.sys-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; overflow-y: auto; }
+
+/* Fallback */
+.fallback { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--text-muted); flex-direction: column; gap: 8px; }
+.fallback .big { font-size: 32px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="logo">Ryn DevKit</span>
+  <span class="sep"></span>
+  <span id="connStatus" class="status">connecting...</span>
+  <span class="metrics" id="topMetrics"></span>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('terminal')">Terminal</div>
+  <div class="tab" onclick="showTab('explorer')">Files</div>
+  <div class="tab" onclick="showTab('playground')">IPC Playground</div>
+  <div class="tab" onclick="showTab('system')">System</div>
+</div>
+
+<div class="content">
+
+  <!-- TERMINAL -->
+  <div id="tab-terminal" class="panel active">
+    <div class="terminal-wrap">
+      <div class="terminal-output" id="termOut"></div>
+      <div class="terminal-input">
+        <input id="termCmd" placeholder="Type a command..." />
+        <button class="btn primary sm" onclick="termExec()">Run</button>
+        <button class="btn sm danger" onclick="termKill()">Kill</button>
+        <button class="btn sm" onclick="termClear()">Clear</button>
+      </div>
+      <div class="metrics-bar" id="termMetrics">ready</div>
+    </div>
+  </div>
+
+  <!-- FILE EXPLORER -->
+  <div id="tab-explorer" class="panel">
+    <div class="explorer">
+      <div class="file-list">
+        <div class="path-bar">
+          <button class="btn sm" onclick="fileUp()">^</button>
+          <span id="filePath">loading...</span>
+        </div>
+        <div class="entries" id="fileEntries"></div>
+      </div>
+      <div class="file-preview">
+        <div class="preview-header" id="previewHeader">Select a file to preview</div>
+        <div class="preview-content" id="previewContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- IPC PLAYGROUND -->
+  <div id="tab-playground" class="panel">
+    <div class="playground">
+      <div class="commands" id="cmdList"></div>
+      <div class="detail" id="cmdDetail">
+        <div class="fallback"><span class="big">IPC</span><span>Select a command to test</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SYSTEM -->
+  <div id="tab-system" class="panel">
+    <div class="sys-grid" id="sysGrid"></div>
+  </div>
+
+</div>
+
+<script>
+var R = window.__ryn;
+var currentDir = '';
+var activePid = null;
+
+// ============ TAB MANAGEMENT ============
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', t.textContent.trim().toLowerCase().replace(' ','') === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  if (name === 'explorer' && !currentDir) loadDir('.');
+  if (name === 'system') loadSystem();
+  if (name === 'playground') loadPlayground();
+}
+
+// ============ CONNECTION CHECK ============
+async function checkConnection() {
+  var el = document.getElementById('connStatus');
+  if (!R) { el.textContent = 'no bridge'; el.className = 'status err'; return; }
+  try {
+    var t0 = performance.now();
+    await R.invoke('devkit.echo', { message: 'ping' });
+    var ms = (performance.now() - t0).toFixed(0);
+    el.textContent = 'connected (' + ms + 'ms)';
+    el.className = 'status ok';
+  } catch(e) { el.textContent = 'error: ' + e.message; el.className = 'status err'; }
+}
+
+// ============ TERMINAL ============
+function termAppend(text, cls) {
+  var el = document.getElementById('termOut');
+  var span = document.createElement('span');
+  span.className = cls || '';
+  span.textContent = text;
+  el.appendChild(span);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function termExec() {
+  var input = document.getElementById('termCmd');
+  var cmd = input.value.trim();
+  if (!cmd || !R) return;
+  input.value = '';
+
+  var parts = cmd.split(/\s+/);
+  var command = parts[0];
+  var args = parts.slice(1);
+
+  termAppend('$ ' + cmd + '\n', 'cmd-echo');
+
+  try {
+    var result = await R.invoke('shell.execute', {
+      command: command,
+      argsJson: JSON.stringify(args)
+    });
+    if (result.stdout) termAppend(result.stdout, 'stdout');
+    if (result.stderr) termAppend(result.stderr, 'stderr');
+    termAppend('exit ' + result.exitCode + '\n', 'exit-code');
+  } catch(e) {
+    termAppend('error: ' + e.message + '\n', 'stderr');
+  }
+}
+
+async function termKill() {
+  if (activePid !== null && R) {
+    try { await R.invoke('shell.kill', { pid: activePid }); } catch(e) {}
+    activePid = null;
+  }
+}
+
+function termClear() { document.getElementById('termOut').innerHTML = ''; }
+
+document.getElementById('termCmd').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') termExec();
+});
+
+// ============ FILE EXPLORER ============
+async function loadDir(path) {
+  if (!R) return;
+  try {
+    currentDir = path;
+    document.getElementById('filePath').textContent = path;
+    var entries = await R.invoke('fs.readDir', { path: path });
+    var list = document.getElementById('fileEntries');
+    list.innerHTML = '';
+
+    // Sort: dirs first, then by name
+    entries.sort(function(a, b) {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    entries.forEach(function(entry) {
+      var div = document.createElement('div');
+      div.className = 'file-entry';
+      div.innerHTML = '<span class="icon">' + (entry.isDirectory ? '📁' : '📄') + '</span>' +
+        '<span class="name">' + esc(entry.name) + '</span>' +
+        '<span class="size">' + (entry.isDirectory ? '' : formatSize(entry.size)) + '</span>';
+      div.onclick = function() {
+        if (entry.isDirectory) loadDir(entry.path);
+        else previewFile(entry);
+      };
+      list.appendChild(div);
+    });
+  } catch(e) {
+    document.getElementById('fileEntries').innerHTML = '<div style="padding:12px;color:var(--red)">' + esc(e.message) + '</div>';
+  }
+}
+
+function fileUp() {
+  if (!currentDir || currentDir === '/') return;
+  var parent = currentDir.split('/').slice(0, -1).join('/') || '/';
+  loadDir(parent);
+}
+
+async function previewFile(entry) {
+  if (!R) return;
+  document.getElementById('previewHeader').textContent = entry.name + ' (' + formatSize(entry.size) + ')';
+  try {
+    var stat = await R.invoke('fs.stat', { path: entry.path });
+    var content = await R.invoke('fs.readTextFile', { path: entry.path });
+    var lines = content.split('\n');
+    var html = '<div class="code-view">';
+    for (var i = 0; i < lines.length; i++) {
+      html += '<div class="line"><span class="ln">' + (i+1) + '</span><span>' + esc(lines[i]) + '</span></div>';
+    }
+    html += '</div>';
+    document.getElementById('previewContent').innerHTML = html;
+  } catch(e) {
+    document.getElementById('previewContent').innerHTML = '<pre style="color:var(--red)">' + esc(e.message) + '</pre>';
+  }
+}
+
+// ============ IPC PLAYGROUND ============
+var commands = [
+  { name: 'devkit.echo', desc: 'Echo a string', args: { message: 'hello' }, types: 'string -> string' },
+  { name: 'devkit.add', desc: 'Add two integers', args: { a: 17, b: 25 }, types: 'int, int -> int' },
+  { name: 'devkit.multiply', desc: 'Multiply two doubles', args: { a: 3.14, b: 2.0 }, types: 'double, double -> double' },
+  { name: 'devkit.reverseArray', desc: 'Reverse a string array', args: { items: ['alpha', 'beta', 'gamma'] }, types: 'string[] -> string[]' },
+  { name: 'devkit.timestamp', desc: 'Get UTC timestamp', args: {}, types: '() -> string' },
+  { name: 'devkit.nullableTest', desc: 'Test nullable returns (0=null)', args: { value: 42 }, types: 'int -> int?' },
+  { name: 'devkit.jsonTest', desc: 'Echo raw JsonElement', args: { data: { nested: true, count: 99 } }, types: 'JsonElement -> JsonElement' },
+  { name: 'devkit.systemInfo', desc: 'Get system info (typed DTO)', args: {}, types: '() -> SystemInfo' },
+  { name: 'devkit.createDto', desc: 'Create a DTO with RynJsonContext', args: { name: 'test-machine' }, types: 'string -> SystemInfo' },
+  { name: 'devkit.benchmark', desc: 'Run a CPU benchmark', args: { iterations: 1000000 }, types: 'int -> BenchmarkResult' },
+  { name: 'devkit.environment', desc: 'Get environment variables', args: {}, types: '() -> string[]' },
+];
+
+function loadPlayground() {
+  var list = document.getElementById('cmdList');
+  list.innerHTML = '';
+  commands.forEach(function(cmd, i) {
+    var div = document.createElement('div');
+    div.className = 'cmd-item';
+    div.innerHTML = '<div class="cmd-name">' + cmd.name + '</div><div class="cmd-desc">' + cmd.desc + '</div>';
+    div.onclick = function() { selectCmd(i); };
+    list.appendChild(div);
+  });
+}
+
+async function selectCmd(idx) {
+  var cmd = commands[idx];
+  document.querySelectorAll('.cmd-item').forEach(function(el, i) { el.classList.toggle('active', i === idx); });
+
+  var detail = document.getElementById('cmdDetail');
+  detail.innerHTML = '<div class="card"><h3>' + cmd.name + '</h3>' +
+    '<div class="kv"><span class="k">Signature</span><span class="v mono">' + cmd.types + '</span></div>' +
+    '<div class="kv"><span class="k">Description</span><span class="v">' + cmd.desc + '</span></div></div>' +
+    '<div class="card"><h3>Arguments</h3><textarea id="pgArgs" rows="4" style="width:100%">' + JSON.stringify(cmd.args, null, 2) + '</textarea>' +
+    '<div class="row" style="margin-top:8px"><button class="btn primary" onclick="runCmd(' + idx + ')">Invoke</button></div></div>' +
+    '<div class="card"><h3>Result</h3><pre id="pgResult">click Invoke to run</pre>' +
+    '<div id="pgTiming" style="font-size:10px;color:var(--text-muted);margin-top:6px"></div></div>';
+}
+
+async function runCmd(idx) {
+  if (!R) return;
+  var cmd = commands[idx];
+  var argsText = document.getElementById('pgArgs').value;
+  var resultEl = document.getElementById('pgResult');
+  var timingEl = document.getElementById('pgTiming');
+
+  try {
+    var args = JSON.parse(argsText);
+    var t0 = performance.now();
+    var result = await R.invoke(cmd.name, args);
+    var elapsed = (performance.now() - t0).toFixed(2);
+    resultEl.textContent = JSON.stringify(result, null, 2);
+    resultEl.style.color = 'var(--green)';
+    timingEl.textContent = elapsed + 'ms';
+  } catch(e) {
+    resultEl.textContent = 'Error: ' + e.message;
+    resultEl.style.color = 'var(--red)';
+    timingEl.textContent = '';
+  }
+}
+
+// ============ SYSTEM PANEL ============
+async function loadSystem() {
+  if (!R) return;
+  var grid = document.getElementById('sysGrid');
+  grid.innerHTML = '<div class="card"><h3>System Info</h3><div id="sysInfo">Loading...</div></div>' +
+    '<div class="card"><h3>Clipboard</h3>' +
+    '<div class="row" style="margin-bottom:8px"><button class="btn sm" onclick="clipRead()">Read</button><button class="btn sm" onclick="clipWrite()">Write</button><button class="btn sm" onclick="clipClear()">Clear</button></div>' +
+    '<pre id="clipContent" style="min-height:40px">click Read</pre></div>' +
+    '<div class="card"><h3>Notifications</h3>' +
+    '<div class="row" style="gap:6px;flex-wrap:wrap"><input id="notifTitle" placeholder="Title" value="Hello from Ryn" style="flex:1" /><input id="notifBody" placeholder="Body" value="DevKit notification test" style="flex:1" />' +
+    '<button class="btn primary sm" onclick="sendNotif()">Send</button></div>' +
+    '<div id="notifStatus" style="margin-top:6px;font-size:11px;color:var(--text-dim)"></div></div>' +
+    '<div class="card"><h3>Native Dialogs</h3>' +
+    '<div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="dlgMessage()">Message</button><button class="btn sm" onclick="dlgConfirm()">Confirm</button>' +
+    '<button class="btn sm" onclick="dlgOpenFile()">Open File</button><button class="btn sm" onclick="dlgSave()">Save</button></div>' +
+    '<pre id="dlgResult" style="min-height:30px;margin-top:8px">click a button</pre></div>';
+
+  try {
+    var info = await R.invoke('devkit.systemInfo');
+    document.getElementById('sysInfo').innerHTML =
+      '<div class="kv"><span class="k">Machine</span><span class="v">' + esc(info.machineName) + '</span></div>' +
+      '<div class="kv"><span class="k">OS</span><span class="v">' + esc(info.os) + '</span></div>' +
+      '<div class="kv"><span class="k">RID</span><span class="v mono">' + esc(info.rid) + '</span></div>' +
+      '<div class="kv"><span class="k">Framework</span><span class="v mono">' + esc(info.framework) + '</span></div>' +
+      '<div class="kv"><span class="k">CPUs</span><span class="v">' + info.processorCount + '</span></div>' +
+      '<div class="kv"><span class="k">Memory</span><span class="v">' + info.memoryMb + ' MB</span></div>';
+  } catch(e) {
+    document.getElementById('sysInfo').innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
+  }
+}
+
+async function clipRead() { try { var t = await R.invoke('clipboard.readText'); document.getElementById('clipContent').textContent = t || '(empty)'; } catch(e) { document.getElementById('clipContent').textContent = 'Error: ' + e.message; } }
+async function clipWrite() { try { await R.invoke('clipboard.writeText', { text: 'Written by Ryn DevKit at ' + new Date().toISOString() }); document.getElementById('clipContent').textContent = '(written)'; } catch(e) {} }
+async function clipClear() { try { await R.invoke('clipboard.clear'); document.getElementById('clipContent').textContent = '(cleared)'; } catch(e) {} }
+
+async function sendNotif() {
+  try {
+    await R.invoke('notification.send', { title: document.getElementById('notifTitle').value, body: document.getElementById('notifBody').value });
+    document.getElementById('notifStatus').textContent = 'Sent!';
+  } catch(e) { document.getElementById('notifStatus').textContent = 'Error: ' + e.message; }
+}
+
+async function dlgMessage() { try { await R.invoke('dialog.message', { title: 'DevKit', message: 'This is a native message dialog from Ryn.' }); document.getElementById('dlgResult').textContent = '(closed)'; } catch(e) { document.getElementById('dlgResult').textContent = e.message; } }
+async function dlgConfirm() { try { var r = await R.invoke('dialog.confirm', { title: 'DevKit', message: 'Do you like Ryn?' }); document.getElementById('dlgResult').textContent = 'Result: ' + r; } catch(e) { document.getElementById('dlgResult').textContent = e.message; } }
+async function dlgOpenFile() { try { var r = await R.invoke('dialog.openFile', { initialPath: '' }); document.getElementById('dlgResult').textContent = r || '(cancelled)'; } catch(e) { document.getElementById('dlgResult').textContent = e.message; } }
+async function dlgSave() { try { var r = await R.invoke('dialog.save', { initialPath: '' }); document.getElementById('dlgResult').textContent = r || '(cancelled)'; } catch(e) { document.getElementById('dlgResult').textContent = e.message; } }
+
+// ============ METRICS POLLING ============
+setInterval(async function() {
+  if (!R) return;
+  try {
+    var m = await R.invoke('shell.metrics');
+    if (m && m.length > 0) {
+      var t = m.reduce(function(a, b) { return { added: (a.added||0) + b.added, flushed: (a.flushed||0) + b.flushed, dropped: (a.dropped||0) + b.dropped }; }, {});
+      document.getElementById('termMetrics').textContent = 'processes: ' + m.length + '  added: ' + t.added + '  flushed: ' + t.flushed + '  dropped: ' + t.dropped;
+    } else {
+      document.getElementById('termMetrics').textContent = 'no active processes';
+    }
+  } catch(e) {}
+}, 3000);
+
+// ============ UTILITIES ============
+function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(1) + ' MB';
+}
+
+// ============ INIT ============
+if (!R) {
+  document.querySelector('.content').innerHTML = '<div class="fallback"><span class="big">Ryn DevKit</span><span>Not running inside Ryn</span><span class="mono" style="font-size:11px">dotnet run --project samples/DevKit</span></div>';
+} else {
+  checkConnection();
+  termAppend('Ryn DevKit ready. Type a command below.\n', 'exit-code');
+}
+</script>
+</body>
+</html>

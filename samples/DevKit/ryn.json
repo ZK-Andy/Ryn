@@ -1,0 +1,15 @@
+{
+  "capabilities": {
+    "fs": {
+      "allow": ["readTextFile", "readFile", "writeTextFile", "readDir", "stat", "exists", "mkdir"],
+      "scope": ["$APP_DATA"]
+    },
+    "dialog": true,
+    "clipboard": true,
+    "shell": {
+      "allow": ["execute", "spawn", "kill", "open", "metrics", "pty", "ptyWrite", "ptyResize", "ptyKill", "ptyMetrics"],
+      "commands": ["echo", "date", "whoami", "uname", "ls", "cat", "pwd", "env", "bash", "sh", "cmd.exe", "powershell"]
+    },
+    "notification": true
+  }
+}
