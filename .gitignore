@@ -61,8 +61,9 @@ build/native/
 **/runtimes/**/native/*.so
 !**/runtimes/**/native/.gitkeep
 
-## Local dev notes
+## Local dev / tooling
 CLAUDE.md
+.claude/
 
 ## Secrets
 *.pfx
