@@ -341,10 +341,15 @@ public sealed class GeneratorSnapshotTests
 
         var runResult = driver.GetRunResult();
 
-        return Verifier.Verify(runResult)
-            .UseDirectory("Snapshots")
-            .ScrubMember("Length")
-            .ScrubMember("ChecksumAlgorithm")
-            .ScrubMember("Checksum");
+        // Extract only the generated source text for verification.
+        // Verifying the full GeneratorDriverRunResult includes platform-dependent
+        // metadata (Length, Checksum, LanguageVersion) that differs across OS/SDK.
+        var sources = runResult.Results
+            .SelectMany(r => r.GeneratedSources)
+            .Select(s => new { s.HintName, Source = s.SourceText.ToString() })
+            .ToArray();
+
+        return Verifier.Verify(sources)
+            .UseDirectory("Snapshots");
     }
 }
