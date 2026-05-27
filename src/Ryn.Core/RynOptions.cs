@@ -12,4 +12,5 @@ public sealed class RynOptions
     public Uri? Url { get; set; }
     public string? Html { get; set; }
     public bool DevTools { get; set; }
+    public IList<string> AllowedOrigins { get; } = new List<string>();
 }

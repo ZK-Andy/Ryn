@@ -95,6 +95,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
 
     // HTML content to serve from ryn://app/
     private string? _htmlContent;
+    private string _corsOrigin = "ryn://app";
 
     private bool _disposed;
 
@@ -109,6 +110,12 @@ public sealed class RynWebView : IRynWebView, IDisposable
     }
 
     internal void SetCommandHandler(CommandDispatchHandler handler) => _commandHandler = handler;
+
+    internal void SetAllowedOrigins(List<string> origins)
+    {
+        if (origins.Count > 0)
+            _corsOrigin = string.Join(", ", origins);
+    }
 
     internal void SetHtmlContent(string html) => _htmlContent = html;
 
@@ -425,12 +432,12 @@ public sealed class RynWebView : IRynWebView, IDisposable
         var mime = Utf8String.Create(rynResponse.ContentType, mimeBuf);
         var response = Saucer.saucer_scheme_response_new(stash, mime.Pointer);
         Saucer.saucer_scheme_response_set_status(response, rynResponse.StatusCode);
-        AppendCorsHeaders(response);
+        AppendHeader(response, "Access-Control-Allow-Origin", "*");
         Saucer.saucer_scheme_executor_accept(executor, response);
         mime.Dispose();
     }
 
-    private static unsafe void AcceptEmptyResponse(saucer_scheme_executor* executor)
+    private unsafe void AcceptEmptyResponse(saucer_scheme_executor* executor)
     {
         var emptyStash = Saucer.saucer_stash_new_empty();
         Span<byte> mimeBuf = stackalloc byte[16];
@@ -441,7 +448,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
         mime.Dispose();
     }
 
-    private static unsafe void AcceptCorsPreflightResponse(saucer_scheme_executor* executor)
+    private unsafe void AcceptCorsPreflightResponse(saucer_scheme_executor* executor)
     {
         var emptyStash = Saucer.saucer_stash_new_empty();
         Span<byte> mimeBuf = stackalloc byte[16];
@@ -454,9 +461,9 @@ public sealed class RynWebView : IRynWebView, IDisposable
         mime.Dispose();
     }
 
-    private static unsafe void AppendCorsHeaders(saucer_scheme_response* response)
+    private unsafe void AppendCorsHeaders(saucer_scheme_response* response)
     {
-        AppendHeader(response, "Access-Control-Allow-Origin", "*");
+        AppendHeader(response, "Access-Control-Allow-Origin", _corsOrigin);
     }
 
     private static unsafe void AppendHeader(saucer_scheme_response* response, string name, string value)

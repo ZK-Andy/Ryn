@@ -209,6 +209,12 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         if (_commandHandler is not null)
             _rynWebView.SetCommandHandler(_commandHandler);
 
+        // Configure CORS origin policy
+        if (_options.AllowedOrigins.Count > 0)
+            _rynWebView.SetAllowedOrigins(_options.AllowedOrigins.ToList());
+        else if (_options.Url is not null)
+            _rynWebView.SetAllowedOrigins([_options.Url.GetLeftPart(UriPartial.Authority)]);
+
         // Subscribe to window events
         SubscribeWindowEvents();
 
