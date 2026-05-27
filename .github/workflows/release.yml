@@ -89,6 +89,43 @@ jobs:
       - name: Pack
         run: dotnet pack -c Release -p:VersionPrefix=${{ steps.version.outputs.VERSION }} -o ./nupkg
 
+      - name: Verify native assets in Ryn.Interop package
+        shell: bash
+        run: |
+          INTEROP_PKG=$(ls ./nupkg/Ryn.Interop.*.nupkg | head -1)
+          echo "Inspecting: $INTEROP_PKG"
+          CONTENTS=$(unzip -l "$INTEROP_PKG" | grep "runtimes/")
+          echo "$CONTENTS"
+
+          for RID in osx-arm64 linux-x64 win-x64; do
+            if echo "$CONTENTS" | grep -q "runtimes/${RID}/native/"; then
+              echo "OK: $RID native assets present"
+            else
+              echo "FATAL: $RID native assets missing from package"
+              exit 1
+            fi
+          done
+
+          # Verify specific expected libraries
+          for LIB in saucer-bindings saucer-bindings-desktop; do
+            if echo "$CONTENTS" | grep -q "$LIB"; then
+              echo "OK: $LIB found"
+            else
+              echo "FATAL: $LIB missing from package"
+              exit 1
+            fi
+          done
+
+          # ryn-pty required on Unix RIDs
+          for RID in osx-arm64 linux-x64; do
+            if echo "$CONTENTS" | grep -q "runtimes/${RID}/native/.*ryn-pty"; then
+              echo "OK: ryn-pty found for $RID"
+            else
+              echo "FATAL: ryn-pty missing for $RID"
+              exit 1
+            fi
+          done
+
       - name: Push to NuGet
         run: dotnet nuget push "./nupkg/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
