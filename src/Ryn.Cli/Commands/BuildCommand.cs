@@ -38,7 +38,11 @@ internal static class BuildCommand
 
         if (process?.ExitCode == 0)
         {
-            var outputDir = Path.Combine(projectDir, "bin", "Release", "net10.0", "publish");
+            var rid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+            var ridPath = Path.Combine(projectDir, "bin", "Release", "net10.0", rid, "publish");
+            var outputDir = Directory.Exists(ridPath)
+                ? ridPath
+                : Path.Combine(projectDir, "bin", "Release", "net10.0", "publish");
             Console.WriteLine();
             Console.WriteLine($"  Build succeeded: {outputDir}");
         }

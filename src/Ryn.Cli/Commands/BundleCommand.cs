@@ -35,7 +35,7 @@ internal static class BundleCommand
             return 1;
         }
 
-        var publishDir = Path.Combine(projectDir, "bin", "Release", "net10.0", "publish");
+        var publishDir = ResolvePublishDir(projectDir);
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             return CreateMacAppBundle(projectDir, projectName, publishDir);
@@ -254,6 +254,20 @@ internal static class BundleCommand
         Console.WriteLine($"  Run with: {appRunPath}");
         Console.WriteLine($"  To create an AppImage: appimagetool {bundleDir}");
         return 0;
+    }
+
+    private static string ResolvePublishDir(string projectDir)
+    {
+        var releaseDir = Path.Combine(projectDir, "bin", "Release", "net10.0");
+
+        // Check RID-specific path first (NativeAOT publish uses this)
+        var rid = RuntimeInformation.RuntimeIdentifier;
+        var ridPath = Path.Combine(releaseDir, rid, "publish");
+        if (Directory.Exists(ridPath))
+            return ridPath;
+
+        // Fall back to non-RID path
+        return Path.Combine(releaseDir, "publish");
     }
 
     private static string? FindCsproj()
