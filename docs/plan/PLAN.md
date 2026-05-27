@@ -6,7 +6,7 @@
 
 ## Vision
 
-Give .NET developers the Tauri experience without leaving C#. Native OS webviews, Blazor-first frontend, NativeAOT-ready, zero JavaScript required. Ryn fills the gap where MAUI lacks Linux support, Avalonia/Uno require XAML, Photino is abandoned, and Tauri requires Rust.
+Give .NET developers the Tauri experience without leaving C#. Native OS webviews, HTML/JS or Blazor frontends, NativeAOT-ready, source-generated IPC. Ryn fills the gap where MAUI lacks Linux support, Avalonia/Uno require XAML, Photino is abandoned, and Tauri requires Rust.
 
 ## Architecture Overview
 
@@ -682,9 +682,7 @@ These are issues discovered during implementation that need to be addressed befo
 
 ### P2 — Quality gaps
 
-11. **Zero benchmarks**
-    - Plan had specific targets: IPC dispatch <1μs, window creation <100ms, JSON serialize <200ns
-    - `AllocationTracker` utility exists in benchmarks project but no benchmark suites written
+11. ~~**Zero benchmarks**~~ **FIXED** — 4 BenchmarkDotNet suites: IPC dispatch, Utf8String marshaling, JSON serialization, EscapeForJs
 
 12. **No CLI tests**
     - `ryn new`, `ryn dev`, `ryn build`, `ryn bundle` have zero test coverage
@@ -693,9 +691,9 @@ These are issues discovered during implementation that need to be addressed befo
     - Nothing tested on Windows or Linux
     - Native lib CI builds for all platforms but no cross-platform integration tests
 
-14. **Capability checks don't integrate with plugin options**
-    - `ryn.json` capabilities and per-plugin options (FileSystemOptions.AllowedPaths, ShellOptions.AllowedCommands) are independent systems
-    - Plan envisioned capabilities scoping paths (e.g., `"scope": ["$APP_DATA"]`) — not implemented
+14. ~~**Capability checks don't integrate with plugin options**~~ **FIXED**
+    - ryn.json now supports `scope` (paths) and `commands` (shell allowlist) per plugin
+    - Capabilities RESTRICT, code CONFIGURES — programmatic options clamped to ryn.json scopes
 
 ---
 
