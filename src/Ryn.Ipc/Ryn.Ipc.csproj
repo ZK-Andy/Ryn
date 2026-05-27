@@ -27,7 +27,7 @@
   </PropertyGroup>
   <Target Name="_PackGeneratorAsAnalyzer" DependsOnTargets="BuildOnlySettings;ResolveReferences">
     <ItemGroup>
-      <TfmSpecificPackageFile Include="$(OutputPath)../../../Ryn.Ipc.Generator/$(Configuration)/netstandard2.0/Ryn.Ipc.Generator.dll"
+      <TfmSpecificPackageFile Include="$(MSBuildThisFileDirectory)../Ryn.Ipc.Generator/bin/$(Configuration)/netstandard2.0/Ryn.Ipc.Generator.dll"
                               PackagePath="analyzers/dotnet/cs" />
     </ItemGroup>
   </Target>
