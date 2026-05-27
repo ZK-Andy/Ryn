@@ -5,26 +5,34 @@ namespace Ryn.Interop;
 
 public static class NativeLibraryResolver
 {
-    private const string LibraryName = "saucer-bindings";
-    private static bool _registered;
+    private static readonly HashSet<string> _registeredAssemblies = new(StringComparer.Ordinal);
+    private static readonly HashSet<string> _knownLibraries = new(StringComparer.Ordinal)
+    {
+        "saucer-bindings",
+        "ryn-pty",
+    };
 
     public static void Register()
     {
-        if (_registered)
-        {
-            return;
-        }
+        RegisterForAssembly(typeof(NativeLibraryResolver).Assembly);
+    }
 
-        _registered = true;
-        NativeLibrary.SetDllImportResolver(typeof(NativeLibraryResolver).Assembly, ResolveLibrary);
+    public static void RegisterForAssembly(Assembly assembly)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+        var name = assembly.FullName ?? assembly.GetName().Name ?? "";
+        lock (_registeredAssemblies)
+        {
+            if (!_registeredAssemblies.Add(name))
+                return;
+        }
+        NativeLibrary.SetDllImportResolver(assembly, ResolveLibrary);
     }
 
     private static nint ResolveLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
-        if (libraryName != LibraryName)
-        {
+        if (!_knownLibraries.Contains(libraryName))
             return nint.Zero;
-        }
 
         var rid = RuntimeInformation.RuntimeIdentifier;
         var extension = GetPlatformExtension();
@@ -33,17 +41,15 @@ public static class NativeLibraryResolver
 
         string[] searchPaths =
         [
-            Path.Combine(baseDir, "runtimes", rid, "native", $"{prefix}{LibraryName}{extension}"),
-            Path.Combine(baseDir, $"{prefix}{LibraryName}{extension}"),
-            $"{prefix}{LibraryName}{extension}",
+            Path.Combine(baseDir, "runtimes", rid, "native", $"{prefix}{libraryName}{extension}"),
+            Path.Combine(baseDir, $"{prefix}{libraryName}{extension}"),
+            $"{prefix}{libraryName}{extension}",
         ];
 
         foreach (var path in searchPaths)
         {
             if (NativeLibrary.TryLoad(path, out var handle))
-            {
                 return handle;
-            }
         }
 
         return nint.Zero;

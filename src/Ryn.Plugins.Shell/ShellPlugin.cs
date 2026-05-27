@@ -1,4 +1,5 @@
 using Ryn.Core;
+using Ryn.Interop;
 
 namespace Ryn.Plugins.Shell;
 
@@ -16,6 +17,7 @@ public sealed class ShellPlugin : IRynPlugin
     public ValueTask InitializeAsync(CancellationToken cancellationToken = default)
     {
         ShellCommands.Configure(_options);
+        NativeLibraryResolver.RegisterForAssembly(typeof(ShellPlugin).Assembly);
         return ValueTask.CompletedTask;
     }
 }
