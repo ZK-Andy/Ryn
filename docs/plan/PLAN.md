@@ -633,6 +633,73 @@ CI runs benchmarks on `main` and on each PR. Results are compared using Benchmar
 
 ---
 
+## Known Issues & Gaps (Post Phase 5)
+
+These are issues discovered during implementation that need to be addressed before beta.
+
+### P0 — Bugs (broken functionality)
+
+1. **Plugin initialization never fires in real apps**
+   - `AddRynFileSystem()`, `AddRynShell()`, etc. register the plugin as a DI singleton via `services.AddSingleton<FileSystemPlugin>()`, but never add it to the app's `_plugins` list via `builder.AddPlugin()`
+   - Result: `IRynPlugin.InitializeAsync()` is never called → `PathValidator.Configure()` and `ShellCommands.Configure()` never run → security options (AllowedPaths, AllowedCommands) are silently ignored
+   - Fix: plugin service extensions need to register a factory that the builder discovers, or the pattern needs rethinking so DI registration and plugin registration are unified
+
+2. **`ryn new` generates a project that can't build**
+   - Generated csproj references `Ryn.Core` and `Ryn.Ipc` as NuGet packages version `0.1.0-alpha.1`, which don't exist on nuget.org
+   - Fix: either publish NuGet packages, or generate project references with a configurable Ryn source path, or use a local NuGet feed
+
+3. **`EvaluateJavaScriptAsync` never verified end-to-end**
+   - The eval bridge (`window.__ryn.eval` → XHR to `/ipc/eval/{id}/{ok}`) was implemented but never tested in a running app
+   - The eval bridge uses the old XHR POST body approach — may have the same issues as the command bridge did before the ryn:// scheme unification (needs verification)
+
+### P1 — Missing features (planned but not implemented)
+
+4. **Source generator only supports primitive types**
+   - Only int, long, float, double, bool, string parameters and returns
+   - Plan called for complex types (records, collections) — would need STJ source-gen integration or a user-provided JsonSerializerContext
+   
+5. **Dialog plugin missing file picker**
+   - Only has `dialog.message` and `dialog.confirm` via osascript
+   - Saucer has `saucer_picker_pick_file`, `saucer_picker_pick_folder`, `saucer_picker_save` bindings ready in Ryn.Interop — need to wire them via `NativeApplicationAccessor`
+
+6. **Binary file operations missing**
+   - `fs.readFile` / `fs.writeFile` with `byte[]` not implemented (only text variants)
+
+7. **Clipboard uses subprocess hacks**
+   - Calls `pbcopy`/`pbpaste`/`xclip`/PowerShell instead of native APIs
+   - No image clipboard support
+
+8. **Shell spawn (streaming output) not implemented**
+   - `shell.execute` works but blocks until process exits
+   - `shell.spawn` with streaming stdout via events not built
+
+9. **Notification is basic**
+   - Uses `osascript`/`notify-send`/PowerShell subprocess calls
+   - No icon support, no click callbacks, no permission management
+
+10. **Event system (`window.__ryn.on/off/emit`) never tested**
+    - Code exists in bridge script and `EmitEvent` on `IRynWebView`
+    - Zero test coverage — unknown if it actually works
+
+### P2 — Quality gaps
+
+11. **Zero benchmarks**
+    - Plan had specific targets: IPC dispatch <1μs, window creation <100ms, JSON serialize <200ns
+    - `AllocationTracker` utility exists in benchmarks project but no benchmark suites written
+
+12. **No CLI tests**
+    - `ryn new`, `ryn dev`, `ryn build`, `ryn bundle` have zero test coverage
+
+13. **macOS only**
+    - Nothing tested on Windows or Linux
+    - Native lib CI builds for all platforms but no cross-platform integration tests
+
+14. **Capability checks don't integrate with plugin options**
+    - `ryn.json` capabilities and per-plugin options (FileSystemOptions.AllowedPaths, ShellOptions.AllowedCommands) are independent systems
+    - Plan envisioned capabilities scoping paths (e.g., `"scope": ["$APP_DATA"]`) — not implemented
+
+---
+
 ## Risk Register
 
 | Risk | Impact | Mitigation |
