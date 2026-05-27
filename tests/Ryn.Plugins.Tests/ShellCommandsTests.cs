@@ -61,26 +61,35 @@ public sealed class ShellCommandsTests
     [Fact]
     public void FullPathAllowlist_DoesNotPermitBareInvocation()
     {
-        var echoPath = OperatingSystem.IsWindows()
-            ? @"C:\Windows\System32\cmd.exe"
-            : "/bin/echo";
+        using var fixture = new CommandFixture("mytool");
 
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = [echoPath] });
+        ShellCommands.Configure(new ShellOptions { AllowedCommands = [fixture.FullPath] });
 
-        var act = () => ShellCommands.ValidateAndResolveCommand("echo");
+        var act = () => ShellCommands.ValidateAndResolveCommand("mytool");
         act.Should().Throw<UnauthorizedAccessException>();
     }
 
     [Fact]
     public void BareAllowlist_ResolvesToConfigTimeCanonicalPath()
     {
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = ["echo"] });
+        using var fixture = new CommandFixture("mytool");
 
-        var resolved = ShellCommands.ValidateAndResolveCommand("echo");
+        var originalPath = Environment.GetEnvironmentVariable("PATH");
+        Environment.SetEnvironmentVariable("PATH", fixture.Directory + (OperatingSystem.IsWindows() ? ";" : ":") + originalPath);
+        try
+        {
+            ShellCommands.Configure(new ShellOptions { AllowedCommands = ["mytool"] });
 
-        resolved.Should().NotBe("echo");
-        Path.IsPathRooted(resolved).Should().BeTrue();
-        File.Exists(resolved).Should().BeTrue();
+            var resolved = ShellCommands.ValidateAndResolveCommand("mytool");
+
+            resolved.Should().NotBe("mytool");
+            Path.IsPathRooted(resolved).Should().BeTrue();
+            resolved.Should().Be(fixture.FullPath);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", originalPath);
+        }
     }
 
     [Fact]
@@ -98,16 +107,62 @@ public sealed class ShellCommandsTests
     [Fact]
     public void FullPathAllowlist_PermitsExactPathInvocation()
     {
-        var echoPath = OperatingSystem.IsWindows()
-            ? @"C:\Windows\System32\cmd.exe"
-            : "/bin/echo";
+        using var fixture = new CommandFixture("mytool");
 
-        if (!File.Exists(echoPath))
-            return; // skip on platforms where the path doesn't exist
+        ShellCommands.Configure(new ShellOptions { AllowedCommands = [fixture.FullPath] });
 
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = [echoPath] });
+        var resolved = ShellCommands.ValidateAndResolveCommand(fixture.FullPath);
+        resolved.Should().Be(fixture.FullPath);
+    }
 
-        var resolved = ShellCommands.ValidateAndResolveCommand(echoPath);
-        resolved.Should().Be(Path.GetFullPath(echoPath));
+    [Fact]
+    public void BareAllowlist_CannotBeHijackedByLaterPathEntry()
+    {
+        using var legitimate = new CommandFixture("mytool");
+        using var malicious = new CommandFixture("mytool");
+
+        var originalPath = Environment.GetEnvironmentVariable("PATH");
+        // Legitimate dir first in PATH at configure time
+        Environment.SetEnvironmentVariable("PATH",
+            legitimate.Directory + (OperatingSystem.IsWindows() ? ";" : ":") +
+            malicious.Directory + (OperatingSystem.IsWindows() ? ";" : ":") + originalPath);
+        try
+        {
+            ShellCommands.Configure(new ShellOptions { AllowedCommands = ["mytool"] });
+
+            // Even if PATH changes later, the resolved path is pinned to configure time
+            var resolved = ShellCommands.ValidateAndResolveCommand("mytool");
+            resolved.Should().Be(legitimate.FullPath);
+            resolved.Should().NotBe(malicious.FullPath);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", originalPath);
+        }
+    }
+
+    private sealed class CommandFixture : IDisposable
+    {
+        public string Directory { get; }
+        public string FullPath { get; }
+
+        public CommandFixture(string name)
+        {
+            Directory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            System.IO.Directory.CreateDirectory(Directory);
+
+            var ext = OperatingSystem.IsWindows() ? ".exe" : "";
+            FullPath = Path.GetFullPath(Path.Combine(Directory, name + ext));
+            File.WriteAllBytes(FullPath, [0]);
+
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(FullPath, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        }
+
+        public void Dispose()
+        {
+            try { System.IO.Directory.Delete(Directory, recursive: true); }
+            catch (IOException) { /* cleanup best-effort */ }
+        }
     }
 }
