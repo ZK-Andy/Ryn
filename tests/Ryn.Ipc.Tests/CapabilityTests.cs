@@ -189,17 +189,19 @@ public sealed class CapabilityTests
 
         var fsScope = caps.GetScope("fs");
         fsScope.Should().NotBeNull();
-        fsScope!.AllowedPaths.Should().HaveCount(2);
-        fsScope.AllowedPaths[0].Should().Be(Path.GetFullPath("/tmp/workspace"));
-        fsScope.AllowedPaths[1].Should().Be(Path.GetFullPath(AppContext.BaseDirectory));
-        fsScope.HasPathRestrictions.Should().BeTrue();
-        fsScope.HasCommandRestrictions.Should().BeFalse();
+        fsScope!.AllowedPaths.Should().NotBeNull();
+        fsScope.AllowedPaths!.Should().HaveCount(2);
+        fsScope.AllowedPaths![0].Should().Be(Path.GetFullPath("/tmp/workspace"));
+        fsScope.AllowedPaths![1].Should().Be(Path.GetFullPath(AppContext.BaseDirectory));
+        fsScope.HasPathPolicy.Should().BeTrue();
+        fsScope.HasCommandPolicy.Should().BeFalse();
 
         var shellScope = caps.GetScope("shell");
         shellScope.Should().NotBeNull();
-        shellScope!.AllowedCommands.Should().BeEquivalentTo(["echo", "date", "git"]);
-        shellScope.HasCommandRestrictions.Should().BeTrue();
-        shellScope.HasPathRestrictions.Should().BeFalse();
+        shellScope!.AllowedCommands.Should().NotBeNull();
+        shellScope.AllowedCommands!.Should().BeEquivalentTo(["echo", "date", "git"]);
+        shellScope.HasCommandPolicy.Should().BeTrue();
+        shellScope.HasPathPolicy.Should().BeFalse();
     }
 
     [Fact]

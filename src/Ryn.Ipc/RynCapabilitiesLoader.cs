@@ -119,8 +119,8 @@ public static class RynCapabilitiesLoader
             return null;
 
         return new CapabilityScope(
-            paths?.AsReadOnly() ?? (IReadOnlyList<string>)[],
-            commands?.AsReadOnly() ?? (IReadOnlyList<string>)[]);
+            paths?.AsReadOnly(),
+            commands?.AsReadOnly());
     }
 
     internal static string ResolveScopePath(string raw)

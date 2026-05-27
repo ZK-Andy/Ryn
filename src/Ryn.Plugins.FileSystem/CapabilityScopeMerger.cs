@@ -13,17 +13,23 @@ internal static class CapabilityScopeMerger
     internal static void MergeFileSystemScope(RynCapabilities capabilities, FileSystemOptions options)
     {
         var scope = capabilities.GetScope("fs");
-        if (scope is null || !scope.HasPathRestrictions)
+        if (scope is null || !scope.HasPathPolicy)
             return;
+
+        // scope: [] means explicit deny-all
+        if (scope.AllowedPaths!.Count == 0)
+        {
+            options.AllowedPaths.Clear();
+            options.AccessDenied = true;
+            return;
+        }
 
         if (options.AllowedPaths.Count == 0)
         {
-            // No programmatic paths — use capability paths directly
             options.AllowedPaths.AddRange(scope.AllowedPaths);
             return;
         }
 
-        // Clamp: keep only programmatic paths that are within a capability scope path
         var clamped = new List<string>();
         foreach (var programmatic in options.AllowedPaths)
         {

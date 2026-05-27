@@ -13,17 +13,22 @@ internal static class CapabilityScopeMerger
     internal static void MergeShellScope(RynCapabilities capabilities, ShellOptions options)
     {
         var scope = capabilities.GetScope("shell");
-        if (scope is null || !scope.HasCommandRestrictions)
+        if (scope is null || !scope.HasCommandPolicy)
             return;
+
+        // commands: [] means explicit deny-all
+        if (scope.AllowedCommands!.Count == 0)
+        {
+            options.AllowedCommands.Clear();
+            return;
+        }
 
         if (options.AllowedCommands.Count == 0)
         {
-            // No programmatic commands — use capability commands directly
             options.AllowedCommands.AddRange(scope.AllowedCommands);
             return;
         }
 
-        // Clamp: keep only programmatic commands that are in the capability scope
         var allowed = new HashSet<string>(scope.AllowedCommands, StringComparer.OrdinalIgnoreCase);
         var clamped = options.AllowedCommands
             .Where(cmd => allowed.Contains(cmd))
