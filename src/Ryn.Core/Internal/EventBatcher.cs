@@ -11,7 +11,8 @@ internal sealed class EventBatcher : IDisposable
     private readonly Channel<string> _channel;
     private readonly Lock _flushLock = new();
     private bool _disposed;
-    private long _droppedCount;
+    private long _addedCount;
+    private long _flushedCount;
 
     private const int FlushIntervalMs = 16;
     private const int MaxBatchSize = 100;
@@ -29,21 +30,22 @@ internal sealed class EventBatcher : IDisposable
         _flushTimer = new Timer(_ => Flush(), null, FlushIntervalMs, FlushIntervalMs);
     }
 
-    internal long DroppedCount => Interlocked.Read(ref _droppedCount);
+    internal long AddedCount => Interlocked.Read(ref _addedCount);
+    internal long FlushedCount => Interlocked.Read(ref _flushedCount);
+    internal long Backlog => AddedCount - FlushedCount;
 
     internal void Add(string jsonData)
     {
         if (_disposed) return;
-
-        if (!_channel.Writer.TryWrite(jsonData))
-            Interlocked.Increment(ref _droppedCount);
+        _channel.Writer.TryWrite(jsonData);
+        Interlocked.Increment(ref _addedCount);
     }
 
     internal void FlushNow()
     {
         lock (_flushLock)
         {
-            FlushLocked();
+            FlushAllLocked();
         }
     }
 
@@ -52,18 +54,37 @@ internal sealed class EventBatcher : IDisposable
         lock (_flushLock)
         {
             if (_disposed) return;
-            FlushLocked();
+            FlushBatchLocked();
         }
     }
 
-    private void FlushLocked()
+    private void FlushBatchLocked()
     {
         var items = new List<string>();
         while (items.Count < MaxBatchSize && _channel.Reader.TryRead(out var item))
             items.Add(item);
 
         if (items.Count == 0) return;
+        EmitBatch(items);
+    }
 
+    private void FlushAllLocked()
+    {
+        var items = new List<string>();
+        while (_channel.Reader.TryRead(out var item))
+            items.Add(item);
+
+        if (items.Count == 0) return;
+
+        for (var offset = 0; offset < items.Count; offset += MaxBatchSize)
+        {
+            var count = Math.Min(MaxBatchSize, items.Count - offset);
+            EmitBatch(items.GetRange(offset, count));
+        }
+    }
+
+    private void EmitBatch(List<string> items)
+    {
         var sb = new StringBuilder();
         sb.Append('[');
         for (var i = 0; i < items.Count; i++)
@@ -73,6 +94,7 @@ internal sealed class EventBatcher : IDisposable
         }
         sb.Append(']');
 
+        Interlocked.Add(ref _flushedCount, items.Count);
         _webView.EmitEvent(_eventName, sb.ToString());
     }
 
@@ -84,7 +106,7 @@ internal sealed class EventBatcher : IDisposable
             _disposed = true;
             _flushTimer.Dispose();
             _channel.Writer.Complete();
-            FlushLocked();
+            FlushAllLocked();
         }
     }
 }
