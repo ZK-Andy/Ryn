@@ -6,7 +6,7 @@ Ryn gives .NET developers the Tauri experience without leaving C#. Native OS web
 
 ## Why Ryn?
 
-- **C# backend, web frontend** — HTML/CSS/JS or Blazor frontend, C# backend with `[RynCommand]` source-generated IPC
+- **C# backend, web frontend** — HTML/CSS/JS frontend, C# backend with `[RynCommand]` source-generated IPC
 - **Lightweight** — Uses native OS webviews (WebView2, WKWebView, WebKitGTK), not bundled Chromium
 - **NativeAOT** — Small, fast, self-contained binaries (~4.3MB) with no runtime dependency
 - **Cross-platform** — Windows, macOS, Linux
@@ -24,6 +24,14 @@ Ryn gives .NET developers the Tauri experience without leaving C#. Native OS web
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (preview)
 - [GitHub CLI](https://cli.github.com/) (`gh`) for downloading native libraries
 - Git with submodule support
+
+### Check your environment
+
+```bash
+dotnet run --project src/Ryn.Cli -- doctor
+```
+
+This checks your .NET SDK version, native libraries, WebView runtime, and build tools.
 
 ### macOS
 
@@ -57,18 +65,19 @@ dotnet run --project samples\Showcase
 ```bash
 git clone --recursive https://github.com/Yupmoh/Ryn.git
 cd Ryn
+
+# Install WebKitGTK (Ubuntu/Debian)
+sudo apt-get install libwebkitgtk-6.0-dev
+
 bash build/download-native.sh         # downloads prebuilt saucer libs
 dotnet build Ryn.slnx
 dotnet test Ryn.slnx
 dotnet run --project samples/Showcase
 ```
 
-WebKitGTK dependencies (Ubuntu/Debian):
-```bash
-sudo apt-get install libwebkitgtk-6.0-dev
-```
+## Creating an App
 
-### Creating a new app
+### From the CLI
 
 ```bash
 dotnet run --project src/Ryn.Cli -- new MyApp
@@ -76,33 +85,108 @@ cd MyApp
 dotnet run
 ```
 
-### Bundling for distribution
+This scaffolds a project with project references to the local Ryn source. The generated app includes a sample IPC command, a dark-themed HTML frontend, and a `ryn.json` capability file.
+
+### How IPC works
+
+Mark C# methods with `[RynCommand]` — the source generator creates dispatch tables at compile time:
+
+```csharp
+using Ryn.Ipc;
+
+public static class MyCommands
+{
+    [RynCommand]
+    public static string Greet(string name) => $"Hello, {name}!";
+
+    [RynCommand]
+    public static int Add(int a, int b) => a + b;
+}
+```
+
+Call them from JavaScript:
+
+```javascript
+const greeting = await window.__ryn.invoke('greet', { name: 'World' });
+const sum = await window.__ryn.invoke('add', { a: 2, b: 3 });
+```
+
+Supported parameter/return types: `int`, `long`, `float`, `double`, `bool`, `string`, `JsonElement`, primitive arrays (`int[]`, `string[]`), nullable types (`int?`), and complex DTOs via `[RynJsonContext]`.
+
+### Security with ryn.json
+
+Control what the frontend can access:
+
+```json
+{
+  "capabilities": {
+    "fs": {
+      "allow": ["readTextFile", "readDir"],
+      "scope": ["$APP_DATA"]
+    },
+    "shell": {
+      "allow": ["execute"],
+      "commands": ["echo", "git"]
+    },
+    "clipboard": true,
+    "notification": true
+  }
+}
+```
+
+Missing `ryn.json` = allow all (dev mode). Present = deny by default. Empty `scope: []` or `commands: []` = explicit deny-all.
+
+## Bundling for Distribution
 
 ```bash
 dotnet run --project src/Ryn.Cli -- bundle
 ```
 
-This creates:
+Options:
+- `--aot` — Enable NativeAOT publishing
+- `--self-contained` — Include .NET runtime
+- `--icon path/to/icon.icns` — Set app icon (macOS)
+- `--sign "Developer ID"` — Code sign (macOS)
+- `--notarize` — Submit for Apple notarization (macOS)
+- `--version 1.0.0` — Set bundle version
+
+Output:
 - **macOS**: `.app` bundle with Info.plist
 - **Windows**: Self-contained folder with executable
 - **Linux**: AppDir structure (use [appimagetool](https://appimage.github.io/) to create an AppImage)
+
+## Sample Apps
+
+| Sample | Description | Run |
+|--------|-------------|-----|
+| [HelloWindow](samples/HelloWindow) | Minimal IPC demo | `dotnet run --project samples/HelloWindow` |
+| [Showcase](samples/Showcase) | Full-featured demo with all plugins | `dotnet run --project samples/Showcase` |
+| [ViteApp](samples/ViteApp) | URL-backed frontend for Vite dev servers | `dotnet run --project samples/ViteApp` |
+| [TerminalApp](samples/TerminalApp) | Terminal with shell.execute and streaming metrics | `dotnet run --project samples/TerminalApp` |
+| [FileManager](samples/FileManager) | File browser with breadcrumb nav and preview | `dotnet run --project samples/FileManager` |
+| [MarkdownEditor](samples/MarkdownEditor) | Split-pane editor with live preview and native dialogs | `dotnet run --project samples/MarkdownEditor` |
 
 ## Project Structure
 
 ```
 src/
-  Ryn.Core          — Window management, app lifecycle, configuration
-  Ryn.Interop       — Auto-generated saucer C bindings via ClangSharp
-  Ryn.Ipc           — JavaScript <> C# IPC bridge with source generators
-  Ryn.Plugins.*     — Native capabilities (FileSystem, Dialog, Clipboard, Shell, Notification)
-  Ryn.Cli           — CLI tool for scaffolding, dev, build, bundle
-samples/
-  HelloWindow/      — Minimal IPC demo
-  Showcase/         — Full-featured demo with all plugins
-  ViteApp/          — URL-backed frontend for Vite dev server integration
-tests/              — 125+ xUnit tests
-benchmarks/         — BenchmarkDotNet suites (IPC, marshaling, JSON, escaping)
+  Ryn.Core             — Window management, app lifecycle, configuration, events
+  Ryn.Interop          — Auto-generated saucer C bindings via ClangSharp
+  Ryn.Ipc              — JS <> C# IPC bridge, source generator, capabilities, observability
+  Ryn.Plugins.*        — FileSystem, Dialog, Clipboard, Shell (spawn/PTY), Notification
+  Ryn.Cli              — CLI: new, dev, build, bundle, doctor
+samples/               — 6 example applications
+templates/             — dotnet new template pack
+tests/                 — 132 xUnit tests across 6 test projects
+benchmarks/            — BenchmarkDotNet suites (IPC, marshaling, JSON, escaping)
+docs/
+  plan/PLAN.md         — Full project plan with milestone tracking
+  plugin-authoring.md  — Guide for writing Ryn plugins
 ```
+
+## Writing Plugins
+
+See [docs/plugin-authoring.md](docs/plugin-authoring.md) for a complete guide on creating Ryn plugins with commands, options, DI, events, and capability scopes.
 
 ## License
 
