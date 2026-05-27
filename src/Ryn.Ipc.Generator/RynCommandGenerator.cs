@@ -8,6 +8,7 @@ namespace Ryn.Ipc.Generator;
 public sealed class RynCommandGenerator : IIncrementalGenerator
 {
     private const string AttributeFullName = "Ryn.Ipc.RynCommandAttribute";
+    private const string JsonContextAttributeFullName = "Ryn.Ipc.RynJsonContextAttribute";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -41,6 +42,7 @@ public sealed class RynCommandGenerator : IIncrementalGenerator
                         kvp.Key,
                         kvp.Value.First().ContainingTypeName,
                         kvp.Value.First().Namespace,
+                        kvp.Value.First().JsonContextTypeFullName,
                         kvp.Value.ToImmutableArray()));
                 }
                 return result.ToImmutable();
@@ -157,6 +159,19 @@ public sealed class RynCommandGenerator : IIncrementalGenerator
 
         var location = ctx.TargetNode.GetLocation();
 
+        // Check for [RynJsonContext(typeof(...))] on the containing class
+        string? jsonContextTypeFullName = null;
+        foreach (var classAttr in containingType.GetAttributes())
+        {
+            if (classAttr.AttributeClass?.ToDisplayString() == JsonContextAttributeFullName
+                && classAttr.ConstructorArguments.Length > 0
+                && classAttr.ConstructorArguments[0].Value is INamedTypeSymbol contextTypeSymbol)
+            {
+                jsonContextTypeFullName = contextTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                break;
+            }
+        }
+
         return new CommandInfo(
             CommandName: commandName,
             MethodName: method.Name,
@@ -175,6 +190,7 @@ public sealed class RynCommandGenerator : IIncrementalGenerator
             ReturnArrayElementSpecialType: returnArrayElementSpecialType,
             IsReturnNullable: isReturnNullable,
             ReturnNullableUnderlyingSpecialType: returnNullableUnderlyingSpecialType,
+            JsonContextTypeFullName: jsonContextTypeFullName,
             Location: location);
     }
 
@@ -212,6 +228,7 @@ internal readonly record struct CommandInfo(
     SpecialType ReturnArrayElementSpecialType,
     bool IsReturnNullable,
     SpecialType ReturnNullableUnderlyingSpecialType,
+    string? JsonContextTypeFullName,
     Location Location);
 
 internal readonly record struct ParameterInfo(
@@ -229,4 +246,5 @@ internal readonly record struct CommandGroup(
     string TypeFullName,
     string TypeName,
     string? Namespace,
+    string? JsonContextTypeFullName,
     ImmutableArray<CommandInfo> Commands);

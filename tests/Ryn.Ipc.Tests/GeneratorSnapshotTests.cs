@@ -260,6 +260,56 @@ public sealed class GeneratorSnapshotTests
         return VerifyGenerator(source);
     }
 
+    [Fact]
+    public Task ComplexParameter()
+    {
+        var source = """
+            using System.Text.Json.Serialization;
+            using Ryn.Ipc;
+
+            namespace TestApp;
+
+            public record MyInput(string Name, int Value);
+
+            [JsonSerializable(typeof(MyInput))]
+            public partial class MyJsonContext : JsonSerializerContext;
+
+            [RynJsonContext(typeof(MyJsonContext))]
+            public class DataCommands
+            {
+                [RynCommand]
+                public static string Process(MyInput input) => input.Name;
+            }
+            """;
+
+        return VerifyGenerator(source);
+    }
+
+    [Fact]
+    public Task ComplexReturn()
+    {
+        var source = """
+            using System.Text.Json.Serialization;
+            using Ryn.Ipc;
+
+            namespace TestApp;
+
+            public record MyOutput(string Label, int Count);
+
+            [JsonSerializable(typeof(MyOutput))]
+            public partial class MyJsonContext : JsonSerializerContext;
+
+            [RynJsonContext(typeof(MyJsonContext))]
+            public class ResultCommands
+            {
+                [RynCommand]
+                public static MyOutput GetResult(int id) => new("item", id);
+            }
+            """;
+
+        return VerifyGenerator(source);
+    }
+
     private static Task VerifyGenerator(string source)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);

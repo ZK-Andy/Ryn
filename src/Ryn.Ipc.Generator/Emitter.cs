@@ -41,6 +41,7 @@ internal static class Emitter
     {
         var valid = true;
         var seenNames = new HashSet<string>(StringComparer.Ordinal);
+        var hasJsonContext = group.JsonContextTypeFullName is not null;
 
         foreach (var cmd in group.Commands)
         {
@@ -62,7 +63,7 @@ internal static class Emitter
                 valid = false;
             }
 
-            if (!IsReturnTypeSupported(cmd))
+            if (!IsReturnTypeSupported(cmd, hasJsonContext))
             {
                 ctx.ReportDiagnostic(Diagnostic.Create(
                     DiagnosticDescriptors.UnsupportedReturnType,
@@ -85,7 +86,7 @@ internal static class Emitter
                         valid = false;
                     }
                 }
-                else if (!IsParameterTypeSupported(p))
+                else if (!IsParameterTypeSupported(p, hasJsonContext))
                 {
                     ctx.ReportDiagnostic(Diagnostic.Create(
                         DiagnosticDescriptors.UnsupportedParameterType,
@@ -99,7 +100,7 @@ internal static class Emitter
         return valid;
     }
 
-    private static bool IsParameterTypeSupported(ParameterInfo p)
+    private static bool IsParameterTypeSupported(ParameterInfo p, bool hasJsonContext)
     {
         if (p.IsJsonElement)
             return true;
@@ -110,10 +111,14 @@ internal static class Emitter
         if (p.IsNullable)
             return IsPrimitiveSpecialType(p.NullableUnderlyingSpecialType);
 
-        return IsPrimitiveSpecialType(p.SpecialType);
+        if (IsPrimitiveSpecialType(p.SpecialType))
+            return true;
+
+        // Non-primitive types are allowed when a JsonSerializerContext is provided
+        return hasJsonContext;
     }
 
-    private static bool IsReturnTypeSupported(CommandInfo cmd)
+    private static bool IsReturnTypeSupported(CommandInfo cmd, bool hasJsonContext)
     {
         if (cmd.IsVoidReturn)
             return true;
@@ -124,7 +129,11 @@ internal static class Emitter
         if (cmd.IsReturnNullable)
             return IsPrimitiveSpecialType(cmd.ReturnNullableUnderlyingSpecialType);
 
-        return IsPrimitiveSpecialType(cmd.InnerReturnSpecialType);
+        if (IsPrimitiveSpecialType(cmd.InnerReturnSpecialType))
+            return true;
+
+        // Non-primitive return types are allowed when a JsonSerializerContext is provided
+        return hasJsonContext;
     }
 
     private static bool IsPrimitiveSpecialType(SpecialType type) =>
@@ -208,7 +217,7 @@ internal static class Emitter
             {
                 var p = jsonParams[i];
                 var camelName = ToCamelCase(p.Name);
-                EmitParameterExtraction(sb, p, i, camelName);
+                EmitParameterExtraction(sb, p, i, camelName, group.JsonContextTypeFullName);
             }
         }
 
@@ -261,13 +270,13 @@ internal static class Emitter
                 sb.AppendLine($"                var __result = {target}({callArgs});");
             }
 
-            EmitResultSerializer(sb, cmd);
+            EmitResultSerializer(sb, cmd, group.JsonContextTypeFullName);
         }
 
         sb.AppendLine("            }");
     }
 
-    private static void EmitParameterExtraction(StringBuilder sb, ParameterInfo p, int index, string camelName)
+    private static void EmitParameterExtraction(StringBuilder sb, ParameterInfo p, int index, string camelName, string? jsonContextType)
     {
         if (p.IsJsonElement)
         {
@@ -285,8 +294,20 @@ internal static class Emitter
             sb.AppendLine($"                var __prop{index} = __root.GetProperty(\"{camelName}\");");
             sb.AppendLine($"                var __p{index} = __prop{index}.ValueKind == System.Text.Json.JsonValueKind.Null ? ({csType}?)null : __prop{index}{elementGetter};");
         }
+        else if (IsPrimitiveSpecialType(p.SpecialType))
+        {
+            var getter = GetElementGetter(p.SpecialType);
+            sb.AppendLine($"                var __p{index} = __root.GetProperty(\"{camelName}\"){getter};");
+        }
+        else if (jsonContextType is not null)
+        {
+            // Complex type — deserialize via the user-supplied JsonSerializerContext
+            var typeInfoProp = GetTypeInfoPropertyName(p.TypeDisplay);
+            sb.AppendLine($"                var __p{index} = JsonSerializer.Deserialize(__root.GetProperty(\"{camelName}\").GetRawText(), {jsonContextType}.Default.{typeInfoProp})!;");
+        }
         else
         {
+            // Fallback: should not reach here if validation passed, but use GetRawText
             var getter = GetElementGetter(p.SpecialType);
             sb.AppendLine($"                var __p{index} = __root.GetProperty(\"{camelName}\"){getter};");
         }
@@ -314,7 +335,7 @@ internal static class Emitter
         _ => "object",
     };
 
-    private static void EmitResultSerializer(StringBuilder sb, CommandInfo cmd)
+    private static void EmitResultSerializer(StringBuilder sb, CommandInfo cmd, string? jsonContextType)
     {
         if (cmd.IsReturnArray)
         {
@@ -333,6 +354,17 @@ internal static class Emitter
                 var innerSerializer = GetScalarSerializer("__result.Value", cmd.ReturnNullableUnderlyingSpecialType);
                 sb.AppendLine($"                return __result.HasValue ? {innerSerializer} : \"null\";");
             }
+        }
+        else if (IsPrimitiveSpecialType(cmd.InnerReturnSpecialType))
+        {
+            var serializer = GetScalarSerializer("__result", cmd.InnerReturnSpecialType);
+            sb.AppendLine($"                return {serializer};");
+        }
+        else if (jsonContextType is not null)
+        {
+            // Complex return type — serialize via the user-supplied JsonSerializerContext
+            var typeInfoProp = GetTypeInfoPropertyName(cmd.InnerReturnType);
+            sb.AppendLine($"                return JsonSerializer.Serialize(__result, {jsonContextType}.Default.{typeInfoProp});");
         }
         else
         {
@@ -397,6 +429,25 @@ internal static class Emitter
         sb.AppendLine("        return services;");
         sb.AppendLine("    }");
         sb.AppendLine("}");
+    }
+
+    /// <summary>
+    /// Derives the JsonTypeInfo property name from a fully qualified type display string.
+    /// e.g. "global::TestApp.MyDto" -> "MyDto"
+    /// </summary>
+    private static string GetTypeInfoPropertyName(string typeDisplay)
+    {
+        // Strip "global::" prefix if present
+        var name = typeDisplay;
+        if (name.StartsWith("global::", StringComparison.Ordinal))
+            name = name.Substring("global::".Length);
+
+        // Take the last segment after '.'
+        var lastDot = name.LastIndexOf('.');
+        if (lastDot >= 0)
+            name = name.Substring(lastDot + 1);
+
+        return name;
     }
 
     private static string ToCamelCase(string name)
