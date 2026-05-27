@@ -144,7 +144,13 @@ internal static class NewCommand
         using Ryn.Ipc;
         using {{name}};
 
+        var html = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "wwwroot", "index.html"));
+
         var app = RynApplication.CreateBuilder()
+            .ConfigureOptions(opts =>
+            {
+                opts.Html = html;
+            })
             .ConfigureServices(services =>
             {
                 services.AddRynCommands();
