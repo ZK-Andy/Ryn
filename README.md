@@ -2,15 +2,15 @@
 
 **Rich Yet Native** — A cross-platform, lightweight .NET framework for building desktop applications with web UIs.
 
-Ryn gives .NET developers the Tauri experience without leaving C#. Native OS webviews, Blazor-first frontend, NativeAOT-ready, zero JavaScript required.
+Ryn gives .NET developers the Tauri experience without leaving C#. Native OS webviews, HTML/JS or Blazor frontends, NativeAOT-ready, source-generated IPC.
 
 ## Why Ryn?
 
-- **All C#** — Blazor frontend + C# backend. No Rust, no JavaScript
+- **C# backend, web frontend** — HTML/CSS/JS or Blazor frontend, C# backend with `[RynCommand]` source-generated IPC
 - **Lightweight** — Uses native OS webviews (WebView2, WKWebView, WebKitGTK), not bundled Chromium
-- **NativeAOT** — Small, fast, self-contained binaries with no runtime dependency
+- **NativeAOT** — Small, fast, self-contained binaries (~4.3MB) with no runtime dependency
 - **Cross-platform** — Windows, macOS, Linux
-- **Allocation-conscious** — Zero-alloc hot paths, benchmarked and enforced
+- **Plugin system** — FileSystem, Dialog (native pickers), Clipboard, Shell (spawn with streaming), Notification
 - **Vertical slice architecture** — Each feature is self-contained and independently testable
 
 ## Status
