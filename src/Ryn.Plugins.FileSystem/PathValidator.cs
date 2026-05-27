@@ -14,6 +14,9 @@ internal static class PathValidator
             : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, path));
 
         var options = _options;
+        if (options is not null && options.AccessDenied)
+            throw new UnauthorizedAccessException("File system access is denied by capability policy");
+
         if (options is null || options.AllowedPaths.Count == 0)
         {
             // Default: restrict to app directory

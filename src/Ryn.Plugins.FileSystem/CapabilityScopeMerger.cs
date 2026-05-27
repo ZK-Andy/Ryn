@@ -39,7 +39,10 @@ internal static class CapabilityScopeMerger
         }
 
         options.AllowedPaths.Clear();
-        options.AllowedPaths.AddRange(clamped);
+        if (clamped.Count == 0)
+            options.AccessDenied = true;
+        else
+            options.AllowedPaths.AddRange(clamped);
     }
 
     private static bool IsWithin(string fullPath, string directory)
