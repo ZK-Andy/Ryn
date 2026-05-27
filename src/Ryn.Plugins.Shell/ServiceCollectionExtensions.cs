@@ -11,6 +11,7 @@ public static class ShellServiceCollectionExtensions
         services.AddSingleton(options);
         services.AddSingleton<ShellPlugin>();
         services.AddShellCommands(); // generated
+        services.AddSpawnCommands(); // generated
         return services;
     }
 }

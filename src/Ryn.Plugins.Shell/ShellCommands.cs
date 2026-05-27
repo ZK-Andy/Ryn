@@ -9,6 +9,8 @@ public static class ShellCommands
 {
     private static ShellOptions? _options;
 
+    internal static ShellOptions? Options => _options;
+
     internal static void Configure(ShellOptions options) => _options = options;
 
     [RynCommand("shell.execute")]
@@ -73,6 +75,7 @@ public static class ShellCommands
 
 internal record ProcessOutput(string Stdout, string Stderr, int ExitCode);
 
+[System.Text.Json.Serialization.JsonSerializable(typeof(string))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(string[]))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ProcessOutput))]
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(PropertyNamingPolicy = System.Text.Json.Serialization.JsonKnownNamingPolicy.CamelCase)]
