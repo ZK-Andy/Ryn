@@ -51,13 +51,17 @@ jobs:
     name: ${{ matrix.rid }}
 
     steps:
+      - name: Install git (Linux container)
+        if: matrix.rid == 'linux-x64'
+        run: pacman --noconfirm -Syu git
+
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Install Linux dependencies
         if: matrix.rid == 'linux-x64'
-        run: pacman --noconfirm -Syu cmake gcc git ninja gtk4 libadwaita webkitgtk-6.0
+        run: pacman --noconfirm -Syu cmake gcc ninja gtk4 libadwaita webkitgtk-6.0
 
       - name: Configure
         run: >
