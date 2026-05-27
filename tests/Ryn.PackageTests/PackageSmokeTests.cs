@@ -69,6 +69,19 @@ public sealed class PackageSmokeTests : IDisposable
         var routerContent = await File.ReadAllTextAsync(generatedFiles[0]);
         routerContent.Should().Contain("ICommandRouter", "the router should implement ICommandRouter");
         routerContent.Should().Contain("greet", "the router should handle the 'greet' command");
+
+        // Step 5: Verify runtime native assets are in the output
+        var outputDir = Path.Combine(appDir, "bin", "Release", "net10.0");
+        if (Directory.Exists(outputDir))
+        {
+            var runtimesDir = Path.Combine(outputDir, "runtimes");
+            if (Directory.Exists(runtimesDir))
+            {
+                var nativeFiles = Directory.GetFiles(runtimesDir, "*", SearchOption.AllDirectories);
+                nativeFiles.Should().NotBeEmpty(
+                    "runtime native assets from Ryn.Interop should be copied to output via buildTransitive targets");
+            }
+        }
 #pragma warning restore CA2007
     }
 
