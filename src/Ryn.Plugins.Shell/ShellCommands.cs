@@ -12,16 +12,20 @@ public static class ShellCommands
     internal static ShellOptions? Options => _options;
 
 
-    internal static void Configure(ShellOptions options) => _options = options;
+    internal static void Configure(ShellOptions options)
+    {
+        _options = options;
+        _resolvedAllowlist = ResolveAllowlist(options.AllowedCommands);
+    }
 
     [RynCommand("shell.execute")]
     public static string Execute(string command, string argsJson)
     {
-        ValidateCommand(command);
+        var resolvedCommand = ValidateAndResolveCommand(command);
 
         var psi = new ProcessStartInfo
         {
-            FileName = command,
+            FileName = resolvedCommand,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -52,15 +56,14 @@ public static class ShellCommands
             Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
     }
 
-    internal static void ValidateCommand(string command)
+    internal static string ValidateAndResolveCommand(string command)
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var options = _options;
-        if (options is null)
-            return;
+        if (_options is null)
+            return command;
 
-        if (options.AllowedCommands.Count == 0)
+        if (_options.AllowedCommands.Count == 0)
             throw new UnauthorizedAccessException("Shell execution is disabled (no commands in allowlist)");
 
         var hasPathSeparator = command.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
@@ -68,45 +71,81 @@ public static class ShellCommands
 
         if (hasPathSeparator)
         {
-            var resolved = Path.GetFullPath(command);
-            if (!options.AllowedCommands.Contains(resolved, StringComparer.OrdinalIgnoreCase))
-                throw new UnauthorizedAccessException($"Command path '{command}' is not in the allowed list");
+            var canonical = Path.GetFullPath(command);
+            if (_resolvedAllowlist is not null
+                && _resolvedAllowlist.TryGetValue(canonical, out var allowed))
+                return allowed;
+            if (_options.AllowedCommands.Contains(canonical, StringComparer.OrdinalIgnoreCase))
+                return canonical;
+            throw new UnauthorizedAccessException($"Command path '{command}' is not in the allowed list");
         }
-        else
-        {
-            if (!options.AllowedCommands.Contains(command, StringComparer.OrdinalIgnoreCase))
-                throw new UnauthorizedAccessException($"Command '{command}' is not in the allowed list");
 
-            var resolvedPath = ResolveCommandPath(command);
-            if (resolvedPath is not null)
+        // Bare command: resolve to canonical path via the pre-resolved allowlist
+        if (_resolvedAllowlist is not null)
+        {
+            foreach (var kvp in _resolvedAllowlist)
             {
-                // Verify the resolved path is a real executable, not a shim or symlink to something unexpected
-                // Store for potential future use (e.g., logging which binary ran)
+                var name = Path.GetFileNameWithoutExtension(kvp.Key);
+                if (string.Equals(name, command, StringComparison.OrdinalIgnoreCase))
+                    return kvp.Value;
             }
         }
+
+        // Fallback: if command is in the allowlist by name (no PATH resolution available)
+        if (_options.AllowedCommands.Contains(command, StringComparer.OrdinalIgnoreCase))
+            return command;
+
+        throw new UnauthorizedAccessException($"Command '{command}' is not in the allowed list");
     }
 
-    private static string? ResolveCommandPath(string command)
+    private static Dictionary<string, string>? _resolvedAllowlist;
+
+    private static Dictionary<string, string> ResolveAllowlist(List<string> commands)
     {
-        var pathEnv = Environment.GetEnvironmentVariable("PATH");
-        if (pathEnv is null) return null;
-
+        var resolved = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
         var separator = OperatingSystem.IsWindows() ? ';' : ':';
-        foreach (var dir in pathEnv.Split(separator))
-        {
-            var candidate = Path.Combine(dir, command);
-            if (File.Exists(candidate)) return candidate;
+        var dirs = pathEnv.Split(separator, StringSplitOptions.RemoveEmptyEntries);
 
-            if (OperatingSystem.IsWindows())
+        foreach (var cmd in commands)
+        {
+            var hasPath = cmd.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                || cmd.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
+
+            if (hasPath)
             {
-                foreach (var ext in new[] { ".exe", ".cmd", ".bat" })
+                var full = Path.GetFullPath(cmd);
+                resolved[full] = full;
+                continue;
+            }
+
+            foreach (var dir in dirs)
+            {
+                var candidate = Path.Combine(dir, cmd);
+                if (File.Exists(candidate))
                 {
-                    var withExt = candidate + ext;
-                    if (File.Exists(withExt)) return withExt;
+                    resolved[Path.GetFullPath(candidate)] = Path.GetFullPath(candidate);
+                    break;
+                }
+
+                if (OperatingSystem.IsWindows())
+                {
+                    var found = false;
+                    foreach (var ext in new[] { ".exe", ".cmd", ".bat" })
+                    {
+                        var withExt = candidate + ext;
+                        if (File.Exists(withExt))
+                        {
+                            resolved[Path.GetFullPath(withExt)] = Path.GetFullPath(withExt);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found) break;
                 }
             }
         }
-        return null;
+        return resolved;
     }
 
     internal static void PopulateArguments(ProcessStartInfo psi, string argsJson)

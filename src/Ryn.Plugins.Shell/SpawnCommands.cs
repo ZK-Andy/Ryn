@@ -21,11 +21,11 @@ public sealed class SpawnCommands : IDisposable
     [RynCommand("shell.spawn")]
     public int Spawn(string command, string argsJson)
     {
-        ShellCommands.ValidateCommand(command);
+        var resolvedCommand = ShellCommands.ValidateAndResolveCommand(command);
 
         var psi = new ProcessStartInfo
         {
-            FileName = command,
+            FileName = resolvedCommand,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
