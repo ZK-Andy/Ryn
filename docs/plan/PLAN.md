@@ -649,34 +649,36 @@ These are issues discovered during implementation that need to be addressed befo
    - Code review confirmed the eval bridge correctly uses the ryn:// scheme (same-origin, no CORS issues) and shares the same `ReadRequestBody`/`AcceptEmptyResponse` mechanism as the working command bridge
    - Fixed thread safety bug: `saucer_webview_execute` was called directly instead of via `ExecuteOnUiThread`, which would crash if called from a thread pool thread (e.g., after an `await` in a `[RynCommand]` handler)
 
-### P1 — Missing features (planned but not implemented)
+### P1 — Missing features — ALL RESOLVED
 
-4. **Source generator only supports primitive types**
-   - Only int, long, float, double, bool, string parameters and returns
-   - Plan called for complex types (records, collections) — would need STJ source-gen integration or a user-provided JsonSerializerContext
-   
-5. **Dialog plugin missing file picker**
-   - Only has `dialog.message` and `dialog.confirm` via osascript
-   - Saucer has `saucer_picker_pick_file`, `saucer_picker_pick_folder`, `saucer_picker_save` bindings ready in Ryn.Interop — need to wire them via `NativeApplicationAccessor`
+4. ~~**Source generator only supports primitive types**~~ **FIXED**
+   - Added JsonElement parameter support for manual deserialization
+   - Added primitive array support (int[], string[], etc.) for both parameters and returns
+   - Added nullable primitive support (int?, bool?, etc.) with proper null-check codegen
 
-6. **Binary file operations missing**
-   - `fs.readFile` / `fs.writeFile` with `byte[]` not implemented (only text variants)
+5. ~~**Dialog plugin missing file picker**~~ **FIXED**
+   - Wired saucer picker bindings: dialog.openFile, dialog.openFolder, dialog.openFiles, dialog.save
+   - Uses NativeApplicationAccessor for saucer_application handle, creates saucer_desktop per call
 
-7. **Clipboard uses subprocess hacks**
-   - Calls `pbcopy`/`pbpaste`/`xclip`/PowerShell instead of native APIs
-   - No image clipboard support
+6. ~~**Binary file operations missing**~~ **FIXED**
+   - Added fs.readFile (returns base64) and fs.writeFile (accepts base64)
 
-8. **Shell spawn (streaming output) not implemented**
-   - `shell.execute` works but blocks until process exits
-   - `shell.spawn` with streaming stdout via events not built
+7. ~~**Clipboard uses subprocess hacks**~~ **IMPROVED**
+   - Still subprocess-based (no native clipboard bindings in saucer), but added:
+   - clipboard.clear command, tool existence checks, proper error handling, PlatformNotSupportedException
 
-9. **Notification is basic**
-   - Uses `osascript`/`notify-send`/PowerShell subprocess calls
-   - No icon support, no click callbacks, no permission management
+8. ~~**Shell spawn (streaming output) not implemented**~~ **FIXED**
+   - Added shell.spawn with streaming stdout/stderr via events (shell.stdout.{pid}, shell.stderr.{pid}, shell.exit.{pid})
+   - Added shell.kill to terminate spawned processes
+   - Process tracking via ConcurrentDictionary with atomic PID assignment
 
-10. **Event system (`window.__ryn.on/off/emit`) never tested**
-    - Code exists in bridge script and `EmitEvent` on `IRynWebView`
-    - Zero test coverage — unknown if it actually works
+9. ~~**Notification is basic**~~ **IMPROVED**
+   - Added notification.requestPermission, notification.sendWithSound
+   - Proper escaping helpers for osascript, shell args, and PowerShell
+
+10. ~~**Event system (`window.__ryn.on/off/emit`) never tested**~~ **FIXED**
+    - 27 tests added covering EscapeForJs, EmitEvent contract, and JS bridge structure
+    - Fixed EscapeForJs bug: missing \0,  ,   escapes
 
 ### P2 — Quality gaps
 
