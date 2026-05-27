@@ -11,6 +11,8 @@ public sealed class RynWebView : IRynWebView, IDisposable
 {
     private const string AppScheme = "ryn";
 
+    internal static string GetBridgeScriptText() => Encoding.UTF8.GetString(BridgeScript);
+
     private static ReadOnlySpan<byte> BridgeScript =>
         """
         (function(){
@@ -460,11 +462,14 @@ public sealed class RynWebView : IRynWebView, IDisposable
         return Encoding.UTF8.GetString(data, (int)size);
     }
 
-    private static string EscapeForJs(string value) =>
+    internal static string EscapeForJs(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)
              .Replace("'", "\\'", StringComparison.Ordinal)
              .Replace("\n", "\\n", StringComparison.Ordinal)
-             .Replace("\r", "\\r", StringComparison.Ordinal);
+             .Replace("\r", "\\r", StringComparison.Ordinal)
+             .Replace("\0", "\\0", StringComparison.Ordinal)
+             .Replace("\u2028", "\\u2028", StringComparison.Ordinal)
+             .Replace("\u2029", "\\u2029", StringComparison.Ordinal);
 
     public unsafe void Dispose()
     {
