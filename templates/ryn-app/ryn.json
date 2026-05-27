@@ -1,0 +1,9 @@
+{
+  "capabilities": {
+    "fs": {
+      "allow": ["readTextFile", "readDir", "exists", "stat"]
+    },
+    "clipboard": true,
+    "notification": true
+  }
+}

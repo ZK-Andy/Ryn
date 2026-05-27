@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Ryn",
+  "classifications": ["Desktop", "Web", "Native"],
+  "identity": "Ryn.App",
+  "name": "Ryn Application",
+  "shortName": "ryn",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "RynApp",
+  "preferNameDirectory": true,
+  "symbols": {
+    "Framework": {
+      "type": "parameter",
+      "description": "Target framework",
+      "datatype": "string",
+      "defaultValue": "net10.0",
+      "replaces": "net10.0"
+    }
+  }
+}
