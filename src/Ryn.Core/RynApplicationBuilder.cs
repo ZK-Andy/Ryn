@@ -14,8 +14,6 @@ public sealed class RynApplicationBuilder
     private readonly ConfigurationBuilder _configurationBuilder = new();
     private readonly List<Action<IServiceCollection>> _configureActions = [];
     private readonly List<Action<RynOptions>> _configureOptionsActions = [];
-    private readonly List<Func<RynApplication, IRynPlugin>> _pluginFactories = [];
-
     internal RynApplicationBuilder(RynOptions? programmaticOptions)
     {
         _programmaticOptions = programmaticOptions;
@@ -42,13 +40,13 @@ public sealed class RynApplicationBuilder
         where TPlugin : class, IRynPlugin
     {
         _services.AddSingleton<TPlugin>();
-        _pluginFactories.Add(app => app.Services.GetRequiredService<TPlugin>());
+        _services.AddSingleton<IRynPlugin>(sp => sp.GetRequiredService<TPlugin>());
         return this;
     }
 
     public RynApplicationBuilder AddPlugin(Func<IServiceProvider, IRynPlugin> factory)
     {
-        _pluginFactories.Add(app => factory(app.Services));
+        _services.AddSingleton<IRynPlugin>(factory);
         return this;
     }
 
@@ -98,9 +96,9 @@ public sealed class RynApplicationBuilder
         var provider = _services.BuildServiceProvider();
         var app = new RynApplication(provider);
 
-        foreach (var factory in _pluginFactories)
+        foreach (var plugin in provider.GetServices<IRynPlugin>())
         {
-            app.AddPlugin(factory(app));
+            app.AddPlugin(plugin);
         }
 
         return app;

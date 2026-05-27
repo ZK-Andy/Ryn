@@ -192,6 +192,34 @@ public sealed class RynApplicationBuilderTests
         initOrder.Should().Equal("A", "B", "C");
     }
 
+    [Fact]
+    public async Task PluginsRegisteredViaDI_AreDiscoveredAndInitialized()
+    {
+        var initOrder = new List<string>();
+        var builder = RynApplication.CreateBuilder();
+        builder.ConfigureServices(services =>
+        {
+            services.AddSingleton(initOrder);
+            services.AddSingleton<DITrackingPlugin>();
+            services.AddSingleton<IRynPlugin>(sp => sp.GetRequiredService<DITrackingPlugin>());
+        });
+
+        await using var app = builder.Build();
+
+        var pluginField = typeof(RynApplication)
+            .GetField("_plugins", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var plugins = (List<IRynPlugin>)pluginField!.GetValue(app)!;
+
+        plugins.Should().ContainSingle(p => p.Name == "DITracking");
+
+        foreach (var plugin in plugins)
+        {
+            await plugin.InitializeAsync();
+        }
+
+        initOrder.Should().Equal("DITracking");
+    }
+
     private interface ITestService;
     private sealed class TestService : ITestService;
 
@@ -202,6 +230,17 @@ public sealed class RynApplicationBuilderTests
         public ValueTask InitializeAsync(CancellationToken cancellationToken = default)
         {
             tracker.Add(name);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class DITrackingPlugin(List<string> tracker) : IRynPlugin
+    {
+        public string Name => "DITracking";
+
+        public ValueTask InitializeAsync(CancellationToken cancellationToken = default)
+        {
+            tracker.Add(Name);
             return ValueTask.CompletedTask;
         }
     }
