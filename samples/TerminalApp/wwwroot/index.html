@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Ryn Terminal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1e1e2e; display: flex; flex-direction: column; height: 100vh; }
+        #toolbar {
+            background: #181825; padding: 8px 16px; display: flex; align-items: center; gap: 12px;
+            border-bottom: 1px solid #313244; font-family: system-ui; color: #cdd6f4; font-size: 13px;
+        }
+        #toolbar button {
+            background: #45475a; border: none; color: #cdd6f4; padding: 4px 12px;
+            border-radius: 4px; cursor: pointer; font-size: 12px;
+        }
+        #toolbar button:hover { background: #585b70; }
+        #metrics { margin-left: auto; color: #6c7086; font-size: 11px; font-family: monospace; }
+        #terminal {
+            flex: 1; background: #1e1e2e; color: #cdd6f4; font-family: 'SF Mono', 'Cascadia Code', monospace;
+            font-size: 14px; padding: 8px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+        }
+        #input-line {
+            background: #181825; border-top: 1px solid #313244; padding: 8px 16px; display: flex; gap: 8px;
+        }
+        #input-line input {
+            flex: 1; background: #313244; border: 1px solid #45475a; color: #cdd6f4;
+            padding: 6px 12px; border-radius: 4px; font-family: monospace; font-size: 14px;
+        }
+        #input-line input:focus { outline: none; border-color: #89b4fa; }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <span>Ryn Terminal</span>
+        <button onclick="clearTerminal()">Clear</button>
+        <button onclick="killProcess()">Kill</button>
+        <div id="metrics"></div>
+    </div>
+    <div id="terminal"></div>
+    <div id="input-line">
+        <input id="cmd" type="text" placeholder="Type a command..." autofocus />
+    </div>
+
+    <script>
+        var term = document.getElementById('terminal');
+        var input = document.getElementById('cmd');
+        var metricsEl = document.getElementById('metrics');
+        var currentPid = null;
+
+        function append(text, color) {
+            var span = document.createElement('span');
+            span.style.color = color || '#cdd6f4';
+            span.textContent = text;
+            term.appendChild(span);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        function clearTerminal() {
+            term.innerHTML = '';
+        }
+
+        async function killProcess() {
+            if (currentPid !== null) {
+                await window.__ryn.invoke('shell.kill', { pid: currentPid });
+                currentPid = null;
+            }
+        }
+
+        async function runCommand(command) {
+            if (!window.__ryn) {
+                append('Not running inside RYN\\n', '#f38ba8');
+                return;
+            }
+
+            append('$ ' + command + '\\n', '#89b4fa');
+
+            try {
+                var result = await window.__ryn.invoke('shell.execute', {
+                    command: command.split(' ')[0],
+                    argsJson: JSON.stringify(command.split(' ').slice(1))
+                });
+
+                if (result.stdout) append(result.stdout, '#a6e3a1');
+                if (result.stderr) append(result.stderr, '#f38ba8');
+                append('exit: ' + result.exitCode + '\\n', '#6c7086');
+            } catch (e) {
+                append('Error: ' + e.message + '\\n', '#f38ba8');
+            }
+        }
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && input.value.trim()) {
+                runCommand(input.value.trim());
+                input.value = '';
+            }
+        });
+
+        // Poll metrics
+        setInterval(async function() {
+            if (!window.__ryn) return;
+            try {
+                var m = await window.__ryn.invoke('shell.metrics');
+                if (m && m.length > 0) {
+                    var total = m.reduce(function(a, b) { return { added: a.added + b.added, flushed: a.flushed + b.flushed, dropped: a.dropped + b.dropped }; }, { added: 0, flushed: 0, dropped: 0 });
+                    metricsEl.textContent = 'added:' + total.added + ' flushed:' + total.flushed + ' dropped:' + total.dropped;
+                }
+            } catch(e) { /* metrics not critical */ }
+        }, 2000);
+
+        if (!window.__ryn) {
+            append('Not running inside RYN — launch with: dotnet run --project samples/TerminalApp\\n', '#fab387');
+        } else {
+            append('Ryn Terminal ready. Type a command below.\\n', '#6c7086');
+        }
+    </script>
+</body>
+</html>
