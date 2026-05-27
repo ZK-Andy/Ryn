@@ -161,8 +161,9 @@ internal static class Emitter
         sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine();
-        sb.AppendLine("    private static string __ToJson(string value)");
+        sb.AppendLine("    private static string __ToJson(string? value)");
         sb.AppendLine("    {");
+        sb.AppendLine("        if (value is null) return \"null\";");
         sb.AppendLine("        var sb = new System.Text.StringBuilder(value.Length + 2);");
         sb.AppendLine("        sb.Append('\"');");
         sb.AppendLine("        foreach (var c in value)");
@@ -321,8 +322,16 @@ internal static class Emitter
         }
         else if (cmd.IsReturnNullable)
         {
-            var innerSerializer = GetScalarSerializer("__result.Value", cmd.ReturnNullableUnderlyingSpecialType);
-            sb.AppendLine($"                return __result.HasValue ? {innerSerializer} : \"null\";");
+            if (cmd.ReturnNullableUnderlyingSpecialType == SpecialType.System_String)
+            {
+                // string? is a reference type nullable — just call __ToJson which handles null
+                sb.AppendLine("                return __ToJson(__result);");
+            }
+            else
+            {
+                var innerSerializer = GetScalarSerializer("__result.Value", cmd.ReturnNullableUnderlyingSpecialType);
+                sb.AppendLine($"                return __result.HasValue ? {innerSerializer} : \"null\";");
+            }
         }
         else
         {
