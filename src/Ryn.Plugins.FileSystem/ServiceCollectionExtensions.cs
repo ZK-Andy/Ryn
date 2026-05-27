@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Ryn.Core;
+using Ryn.Ipc;
 
 namespace Ryn.Plugins.FileSystem;
 
@@ -9,7 +10,13 @@ public static class FileSystemServiceCollectionExtensions
     {
         var options = new FileSystemOptions();
         configure?.Invoke(options);
-        services.AddSingleton(options);
+        services.AddSingleton(sp =>
+        {
+            var caps = sp.GetService<RynCapabilities>();
+            if (caps is not null)
+                CapabilityScopeMerger.MergeFileSystemScope(caps, options);
+            return options;
+        });
         services.AddSingleton<FileSystemPlugin>();
         services.AddSingleton<IRynPlugin>(sp => sp.GetRequiredService<FileSystemPlugin>());
         services.AddFileSystemCommands(); // generated
