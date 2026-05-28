@@ -14,6 +14,7 @@ public sealed class RynOptions
     public string? ContentDirectory { get; set; }
     public bool UseLocalServer { get; set; }
     public bool UseHttps { get; set; }
+    public string? IconPath { get; set; }
     public bool DevTools { get; set; }
     public IList<string> AllowedOrigins { get; } = new List<string>();
 }

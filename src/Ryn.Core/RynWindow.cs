@@ -307,6 +307,22 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
             Saucer.saucer_window_set_decorations(_window, saucer_window_decoration.SAUCER_WINDOW_DECORATION_NONE);
         }
 
+        // Icon
+        if (_options.IconPath is not null && File.Exists(_options.IconPath))
+        {
+            Span<byte> iconBuf = stackalloc byte[1024];
+            var iconStr = Utf8String.Create(_options.IconPath, iconBuf);
+            int iconError;
+            System.Runtime.CompilerServices.Unsafe.SkipInit(out iconError);
+            var icon = Saucer.saucer_icon_new_from_file(iconStr.Pointer, &iconError);
+            iconStr.Dispose();
+            if (icon != null && iconError == 0)
+            {
+                Saucer.saucer_window_set_icon(_window, icon);
+                Saucer.saucer_icon_free(icon);
+            }
+        }
+
         // Dev tools
         if (_options.DevTools)
         {
