@@ -7,6 +7,7 @@ import IpcPlayground from './components/IpcPlayground.vue'
 const tabs = ['System', 'Todos', 'IPC'] as const
 type Tab = typeof tabs[number]
 const activeTab = ref<Tab>('System')
+
 </script>
 
 <template>

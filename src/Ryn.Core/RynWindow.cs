@@ -308,7 +308,14 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         }
         else if (_options.HideTitleBar)
         {
-            Saucer.saucer_window_set_decorations(_window, saucer_window_decoration.SAUCER_WINDOW_DECORATION_PARTIAL);
+            if (OperatingSystem.IsMacOS())
+            {
+                ApplyMacOsTransparentTitleBar();
+            }
+            else
+            {
+                Saucer.saucer_window_set_decorations(_window, saucer_window_decoration.SAUCER_WINDOW_DECORATION_PARTIAL);
+            }
         }
 
         // Icon
@@ -332,6 +339,24 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         {
             Saucer.saucer_webview_set_dev_tools(_webview, 1);
             Saucer.saucer_webview_set_context_menu(_webview, 1);
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("macos")]
+    private void ApplyMacOsTransparentTitleBar()
+    {
+        nuint size;
+        System.Runtime.CompilerServices.Unsafe.SkipInit(out size);
+        Saucer.saucer_window_native(_window, 0, null, &size);
+        if (size == 0 || size > 64) return;
+
+        Span<byte> buf = stackalloc byte[(int)size];
+        fixed (byte* ptr = buf)
+        {
+            Saucer.saucer_window_native(_window, 0, ptr, &size);
+            var nsWindow = System.Runtime.InteropServices.MemoryMarshal.Read<nint>(buf);
+            if (nsWindow != 0)
+                MacOsTitleBar.ApplyTransparentTitleBar(nsWindow);
         }
     }
 
