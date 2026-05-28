@@ -8,6 +8,7 @@ public sealed class RynOptions
     public int Height { get; set; } = 600;
     public bool Resizable { get; set; } = true;
     public bool Frameless { get; set; }
+    public bool HideTitleBar { get; set; }
     public bool Transparent { get; set; }
     public Uri? Url { get; set; }
     public string? Html { get; set; }

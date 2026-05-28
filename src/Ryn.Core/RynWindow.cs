@@ -301,10 +301,14 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         // Resizable
         Saucer.saucer_window_set_resizable(_window, (byte)(_options.Resizable ? 1 : 0));
 
-        // Decorations (frameless)
+        // Decorations
         if (_options.Frameless)
         {
             Saucer.saucer_window_set_decorations(_window, saucer_window_decoration.SAUCER_WINDOW_DECORATION_NONE);
+        }
+        else if (_options.HideTitleBar)
+        {
+            Saucer.saucer_window_set_decorations(_window, saucer_window_decoration.SAUCER_WINDOW_DECORATION_PARTIAL);
         }
 
         // Icon

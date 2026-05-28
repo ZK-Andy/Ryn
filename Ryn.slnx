@@ -23,6 +23,7 @@
     <Project Path="src/Ryn.Plugins.FileSystem/Ryn.Plugins.FileSystem.csproj" />
     <Project Path="src/Ryn.Plugins.Notification/Ryn.Plugins.Notification.csproj" />
     <Project Path="src/Ryn.Plugins.Shell/Ryn.Plugins.Shell.csproj" />
+    <Project Path="src/Ryn.Plugins.Tray/Ryn.Plugins.Tray.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Ryn.Core.Tests/Ryn.Core.Tests.csproj" />
