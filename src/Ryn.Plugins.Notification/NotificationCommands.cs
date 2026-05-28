@@ -8,54 +8,26 @@ public static class NotificationCommands
     [RynCommand("notification.send")]
     public static void Send(string title, string body)
     {
-        if (OperatingSystem.IsMacOS())
-        {
-            var escapedTitle = EscapeOsascript(title);
-            var escapedBody = EscapeOsascript(body);
-            RunProcess("osascript", $"-e display notification \"{escapedBody}\" with title \"{escapedTitle}\"");
-        }
-        else if (OperatingSystem.IsLinux())
-        {
-            RunProcess("notify-send", $"-- {EscapeShellArg(title)} {EscapeShellArg(body)}");
-        }
-        else if (OperatingSystem.IsWindows())
-        {
-            var escapedTitle = EscapePowerShell(title);
-            var script = $"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; $xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(0); $xml.GetElementsByTagName('text')[0].AppendChild($xml.CreateTextNode('{escapedTitle}')); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Ryn').Show([Windows.UI.Notifications.ToastNotification]::new($xml))";
-            RunProcess("powershell", $"-command \"{script}\"");
-        }
+        SendInternal(title, body, sound: null, iconPath: null);
     }
 
     [RynCommand("notification.sendWithSound")]
     public static void SendWithSound(string title, string body, string sound)
     {
-        if (OperatingSystem.IsMacOS())
-        {
-            var escapedTitle = EscapeOsascript(title);
-            var escapedBody = EscapeOsascript(body);
-            var escapedSound = EscapeOsascript(sound);
+        SendInternal(title, body, sound, iconPath: null);
+    }
 
-            var soundClause = string.IsNullOrEmpty(sound) ? "" : $" sound name \"{escapedSound}\"";
-            RunProcess("osascript", $"-e display notification \"{escapedBody}\" with title \"{escapedTitle}\"{soundClause}");
-        }
-        else if (OperatingSystem.IsLinux())
-        {
-            // notify-send doesn't have a cross-distro sound flag; send the notification normally
-            RunProcess("notify-send", $"-- {EscapeShellArg(title)} {EscapeShellArg(body)}");
-        }
-        else if (OperatingSystem.IsWindows())
-        {
-            var escapedTitle = EscapePowerShell(title);
-            var script = $"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; $xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(0); $xml.GetElementsByTagName('text')[0].AppendChild($xml.CreateTextNode('{escapedTitle}')); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Ryn').Show([Windows.UI.Notifications.ToastNotification]::new($xml))";
-            RunProcess("powershell", $"-command \"{script}\"");
-        }
+    [RynCommand("notification.sendWithIcon")]
+    public static void SendWithIcon(string title, string body, string iconPath)
+    {
+        SendInternal(title, body, sound: null, iconPath);
     }
 
     [RynCommand("notification.isSupported")]
     public static bool IsSupported()
     {
         if (OperatingSystem.IsMacOS()) return true;
-        if (OperatingSystem.IsLinux()) return true;
+        if (OperatingSystem.IsLinux()) return IsToolAvailable("notify-send");
         if (OperatingSystem.IsWindows()) return true;
         return false;
     }
@@ -75,6 +47,106 @@ public static class NotificationCommands
         return "denied";
     }
 
+    private static void SendInternal(string title, string body, string? sound, string? iconPath)
+    {
+        if (OperatingSystem.IsMacOS())
+            SendMacOS(title, body, sound);
+        else if (OperatingSystem.IsLinux())
+            SendLinux(title, body, iconPath);
+        else if (OperatingSystem.IsWindows())
+            SendWindows(title, body);
+    }
+
+    private static void SendMacOS(string title, string body, string? sound)
+    {
+        var escapedTitle = EscapeOsascript(title);
+        var escapedBody = EscapeOsascript(body);
+
+        var script = $"display notification \"{escapedBody}\" with title \"{escapedTitle}\"";
+
+        if (!string.IsNullOrEmpty(sound))
+        {
+            var escapedSound = EscapeOsascript(sound);
+            script += $" sound name \"{escapedSound}\"";
+        }
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = "osascript",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        psi.ArgumentList.Add("-e");
+        psi.ArgumentList.Add(script);
+
+        RunProcess(psi);
+    }
+
+    private static void SendLinux(string title, string body, string? iconPath)
+    {
+        if (!IsToolAvailable("notify-send"))
+            throw new InvalidOperationException(
+                "notify-send is not installed. Install libnotify (e.g. 'sudo apt install libnotify-bin') to enable notifications.");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = "notify-send",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        psi.ArgumentList.Add("--urgency=normal");
+
+        if (!string.IsNullOrEmpty(iconPath))
+        {
+            psi.ArgumentList.Add($"--icon={iconPath}");
+        }
+
+        psi.ArgumentList.Add("--");
+        psi.ArgumentList.Add(title);
+        psi.ArgumentList.Add(body);
+
+        RunProcess(psi);
+    }
+
+    private static void SendWindows(string title, string body)
+    {
+        // Build toast XML with both title and body text nodes.
+        // ToastText02 template has two <text> elements: title and body.
+        var escapedTitle = EscapePowerShell(title);
+        var escapedBody = EscapePowerShell(body);
+
+        var script = string.Concat(
+            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; ",
+            "$template = '<toast><visual><binding template=\"ToastText02\">",
+            $"<text id=\"1\">{escapedTitle}</text>",
+            $"<text id=\"2\">{escapedBody}</text>",
+            "</binding></visual></toast>'; ",
+            "$xml = [Windows.Data.Xml.Dom.XmlDocument]::new(); ",
+            "$xml.LoadXml($template); ",
+            "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Ryn').Show(",
+            "[Windows.UI.Notifications.ToastNotification]::new($xml))");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = "powershell",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        psi.ArgumentList.Add("-NoProfile");
+        psi.ArgumentList.Add("-NonInteractive");
+        psi.ArgumentList.Add("-Command");
+        psi.ArgumentList.Add(script);
+
+        RunProcess(psi);
+    }
+
     private static string EscapeOsascript(string value)
     {
         return value
@@ -82,32 +154,22 @@ public static class NotificationCommands
             .Replace("\"", "\\\"", StringComparison.Ordinal);
     }
 
-    private static string EscapeShellArg(string value)
-    {
-        // Wrap in single quotes; escape any embedded single quotes
-        return "'" + value.Replace("'", "'\\''", StringComparison.Ordinal) + "'";
-    }
-
     private static string EscapePowerShell(string value)
     {
-        return value.Replace("'", "''", StringComparison.Ordinal);
+        // Escape XML-special characters for embedding in toast XML, then
+        // escape single quotes for the PowerShell string wrapper.
+        return value
+            .Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("<", "&lt;", StringComparison.Ordinal)
+            .Replace(">", "&gt;", StringComparison.Ordinal)
+            .Replace("'", "''", StringComparison.Ordinal);
     }
 
-    private static void RunProcess(string fileName, string arguments)
+    private static void RunProcess(ProcessStartInfo psi)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = fileName,
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
         using var process = Process.Start(psi);
         if (process is null)
-            throw new InvalidOperationException($"Failed to start process '{fileName}'.");
+            throw new InvalidOperationException($"Failed to start process '{psi.FileName}'.");
 
         process.WaitForExit();
     }
@@ -119,11 +181,11 @@ public static class NotificationCommands
         var psi = new ProcessStartInfo
         {
             FileName = whichCommand,
-            Arguments = tool,
             RedirectStandardOutput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        psi.ArgumentList.Add(tool);
 
         try
         {
