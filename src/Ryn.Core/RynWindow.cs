@@ -249,6 +249,10 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         else if (_options.Url is not null)
             _rynWebView.SetAllowedOrigins([_options.Url.GetLeftPart(UriPartial.Authority)]);
 
+        // Inject console log forwarding script (dev mode only)
+        if (_options.DevTools)
+            _rynWebView.InjectConsoleForwardScript();
+
         // Inject title bar safe-area insets as CSS variables
         if (_options.TitleBarStyle is TitleBarStyle.Hidden or TitleBarStyle.Overlay)
             InjectTitleBarInsets();

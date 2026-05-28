@@ -36,6 +36,10 @@ public sealed class RynCapabilities
         if (!_enforced) return;
         ArgumentNullException.ThrowIfNull(command);
 
+        // Internal framework commands bypass capability checks
+        if (command.StartsWith("__ryn.", StringComparison.Ordinal))
+            return;
+
         var dotIndex = command.IndexOf('.', StringComparison.Ordinal);
         if (dotIndex < 0)
             throw new RynCommandDeniedException(command, "Command has no plugin prefix");

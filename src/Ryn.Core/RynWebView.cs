@@ -12,6 +12,33 @@ public sealed class RynWebView : IRynWebView, IDisposable
     private const string AppScheme = "ryn";
 
     internal static string GetBridgeScriptText() => Encoding.UTF8.GetString(BridgeScript);
+    internal static string GetConsoleForwardScriptText() => Encoding.UTF8.GetString(ConsoleForwardScript);
+
+    private static ReadOnlySpan<byte> ConsoleForwardScript =>
+        """
+        (function(){
+          var c = window.console;
+          var orig = { log: c.log, warn: c.warn, error: c.error, info: c.info };
+          function fmt(args) {
+            var parts = [];
+            for (var i = 0; i < args.length; i++) {
+              var a = args[i];
+              if (a === null) { parts.push('null'); }
+              else if (a === undefined) { parts.push('undefined'); }
+              else if (typeof a === 'object') {
+                try { parts.push(JSON.stringify(a)); } catch(e) { parts.push(String(a)); }
+              } else { parts.push(String(a)); }
+            }
+            return parts.join(' ');
+          }
+          ['log','warn','error','info'].forEach(function(level) {
+            c[level] = function() {
+              orig[level].apply(c, arguments);
+              try { window.__ryn.invoke('__ryn.console', { level: level, message: fmt(arguments) }); } catch(e) {}
+            };
+          });
+        })();
+        """u8;
 
     private static ReadOnlySpan<byte> BridgeScript =>
         """
@@ -248,6 +275,19 @@ public sealed class RynWebView : IRynWebView, IDisposable
     private unsafe void InjectBridgeScript()
     {
         fixed (byte* ptr = BridgeScript)
+        {
+            Saucer.saucer_webview_inject(
+                (saucer_webview*)_webview,
+                (sbyte*)ptr,
+                saucer_script_time.SAUCER_SCRIPT_TIME_CREATION,
+                0,
+                0);
+        }
+    }
+
+    internal unsafe void InjectConsoleForwardScript()
+    {
+        fixed (byte* ptr = ConsoleForwardScript)
         {
             Saucer.saucer_webview_inject(
                 (saucer_webview*)_webview,

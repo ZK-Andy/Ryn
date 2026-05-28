@@ -14,6 +14,8 @@ public static class RynIpcServiceCollectionExtensions
             sp.GetRequiredService<RynCommandDispatcher>().DispatchAsync);
         services.AddSingleton<WindowCommands>();
         services.AddWindowCommands();
+        services.AddSingleton<ConsoleForwardCommands>();
+        services.AddConsoleForwardCommands();
         return services;
     }
 }
