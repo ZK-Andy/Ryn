@@ -71,6 +71,15 @@ jobs:
       - name: Test
         run: dotnet test --no-build -c ${{ matrix.configuration }} --filter "Category!=Integration&Category!=Package" --logger "trx;LogFileName=results.trx"
 
+      - name: Copy native libs to test output
+        if: hashFiles(format('src/Ryn.Interop/runtimes/{0}/native/*', matrix.rid)) != ''
+        shell: bash
+        run: |
+          SRC="src/Ryn.Interop/runtimes/${{ matrix.rid }}/native"
+          DEST="tests/Ryn.Integration.Tests/bin/${{ matrix.configuration }}/net10.0/runtimes/${{ matrix.rid }}/native"
+          mkdir -p "$DEST"
+          cp "$SRC"/* "$DEST/"
+
       - name: Integration test
         if: hashFiles(format('src/Ryn.Interop/runtimes/{0}/native/*', matrix.rid)) != ''
         run: dotnet test --no-build -c ${{ matrix.configuration }} --filter "Category=Integration" --logger "trx;LogFileName=integration-results.trx"
