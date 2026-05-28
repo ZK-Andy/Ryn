@@ -17,6 +17,8 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
 
     private RynWebView? _rynWebView;
     private LocalWebServer? _localServer;
+    private SystemThemeDetector? _themeDetector;
+    private WindowStatePersistence? _statePersistence;
 
     private CommandDispatchHandler? _commandHandler;
 
@@ -24,7 +26,36 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
     private int _cachedWidth;
     private int _cachedHeight;
     private bool _cachedResizable;
+    private int _cachedX;
+    private int _cachedY;
     private bool _disposed;
+
+    /// <inheritdoc />
+    public event EventHandler<WindowClosingEventArgs>? Closing;
+
+    /// <inheritdoc />
+    public event EventHandler? Closed;
+
+    /// <inheritdoc />
+    public event EventHandler<WindowResizedEventArgs>? Resized;
+
+    /// <inheritdoc />
+    public event EventHandler? Focused;
+
+    /// <inheritdoc />
+    public event EventHandler? Blurred;
+
+    /// <inheritdoc />
+    public event EventHandler<WindowMovedEventArgs>? Moved;
+
+    /// <inheritdoc />
+    public event EventHandler<WindowStateChangedEventArgs>? StateChanged;
+
+    /// <inheritdoc />
+    public event EventHandler<ThemeChangedEventArgs>? ThemeChanged;
+
+    /// <inheritdoc />
+    public AppTheme Theme => _themeDetector?.Current ?? SystemThemeDetector.Detect();
 
     internal RynWindow(RynOptions options)
     {
@@ -92,31 +123,26 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
 
     public ValueTask ShowAsync(CancellationToken cancellationToken = default)
     {
-        if (_window != null)
-            Saucer.saucer_window_show(_window);
+        if (_window != null) Saucer.saucer_window_show(_window);
         return ValueTask.CompletedTask;
     }
 
     public ValueTask HideAsync(CancellationToken cancellationToken = default)
     {
-        if (_window != null)
-            Saucer.saucer_window_hide(_window);
+        if (_window != null) Saucer.saucer_window_hide(_window);
         return ValueTask.CompletedTask;
     }
 
     public ValueTask CloseAsync(CancellationToken cancellationToken = default)
     {
-        if (_window != null)
-            Saucer.saucer_window_close(_window);
+        if (_window != null) Saucer.saucer_window_close(_window);
         return ValueTask.CompletedTask;
     }
 
     public ValueTask WaitForCloseAsync(CancellationToken cancellationToken = default)
     {
         if (cancellationToken.CanBeCanceled)
-        {
             cancellationToken.Register(() => _closeTcs.TrySetCanceled(cancellationToken));
-        }
         return new ValueTask(_closeTcs.Task);
     }
 
@@ -124,20 +150,11 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         _rynWebView?.NavigateAsync(url, cancellationToken) ?? ValueTask.CompletedTask;
 
     public ValueTask<string> EvaluateJavaScriptAsync(string script, CancellationToken cancellationToken = default) =>
-        _rynWebView?.EvaluateJavaScriptAsync(script, cancellationToken)
-            ?? new ValueTask<string>(string.Empty);
+        _rynWebView?.EvaluateJavaScriptAsync(script, cancellationToken) ?? new ValueTask<string>(string.Empty);
 
-    public unsafe void Close()
-    {
-        if (_window != null)
-            Saucer.saucer_window_close(_window);
-    }
+    public unsafe void Close() { if (_window != null) Saucer.saucer_window_close(_window); }
 
-    public unsafe void Minimize()
-    {
-        if (_window != null)
-            Saucer.saucer_window_set_minimized(_window, 1);
-    }
+    public unsafe void Minimize() { if (_window != null) Saucer.saucer_window_set_minimized(_window, 1); }
 
     public unsafe void ToggleMaximize()
     {
@@ -148,53 +165,29 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         }
     }
 
-    public unsafe void StartDrag()
-    {
-        if (_window != null)
-            Saucer.saucer_window_start_drag(_window);
-    }
+    public unsafe void StartDrag() { if (_window != null) Saucer.saucer_window_start_drag(_window); }
 
-    public unsafe void StartResize(WindowEdge edge)
-    {
-        if (_window != null)
-            Saucer.saucer_window_start_resize(_window, (saucer_window_edge)edge);
-    }
+    public unsafe void StartResize(WindowEdge edge) { if (_window != null) Saucer.saucer_window_start_resize(_window, (saucer_window_edge)edge); }
 
     internal void Run(CancellationToken cancellationToken)
     {
         NativeLibraryResolver.Register();
-
         Span<byte> idBuf = stackalloc byte[256];
         var appIdStr = Utf8String.Create(_options.ApplicationId, idBuf);
         var appOpts = Saucer.saucer_application_options_new(appIdStr.Pointer);
         appIdStr.Dispose();
-
         int error = 0;
         _app = Saucer.saucer_application_new(appOpts, &error);
         Saucer.saucer_application_options_free(appOpts);
-
-        if (_app == null)
-            throw new InvalidOperationException($"Failed to create saucer application (error code: {error})");
-
+        if (_app == null) throw new InvalidOperationException($"Failed to create saucer application (error code: {error})");
         if (cancellationToken.CanBeCanceled)
-        {
-            cancellationToken.Register(() =>
-            {
-                if (_app != null)
-                    Saucer.saucer_application_quit(_app);
-            });
-        }
-
+            cancellationToken.Register(() => { if (_app != null) Saucer.saucer_application_quit(_app); });
         _selfHandle = NativeCallbackHelper.Alloc(this);
-
-        var exitCode = Saucer.saucer_application_run(
-            _app,
+        var exitCode = Saucer.saucer_application_run(_app,
             (delegate* unmanaged[Cdecl]<saucer_application*, void*, void>)&OnReady,
             (delegate* unmanaged[Cdecl]<saucer_application*, void*, void>)&OnFinish,
             _selfHandle);
         _ = exitCode;
-
-        // After run returns, clean up native resources
         DisposeNative();
     }
 
@@ -215,52 +208,47 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
     private void InitializeNative()
     {
         int error = 0;
-
         _window = Saucer.saucer_window_new(_app, &error);
-        if (_window == null)
-            throw new InvalidOperationException($"Failed to create saucer window (error code: {error})");
-
-        // Register ryn:// scheme before webview creation (used for both content and IPC)
+        if (_window == null) throw new InvalidOperationException($"Failed to create saucer window (error code: {error})");
         Span<byte> schemeBuf = stackalloc byte[32];
         var schemeStr = Utf8String.Create("ryn", schemeBuf);
         Saucer.saucer_webview_register_scheme(schemeStr.Pointer);
         schemeStr.Dispose();
-
         var webviewOpts = Saucer.saucer_webview_options_new(_window);
         _webview = Saucer.saucer_webview_new(webviewOpts, &error);
         Saucer.saucer_webview_options_free(webviewOpts);
-
-        if (_webview == null)
-            throw new InvalidOperationException($"Failed to create saucer webview (error code: {error})");
-
-        // Apply options
+        if (_webview == null) throw new InvalidOperationException($"Failed to create saucer webview (error code: {error})");
         ApplyWindowOptions();
-
-        // Create managed webview wrapper
+        int ix, iy;
+        Saucer.saucer_window_position(_window, &ix, &iy);
+        _cachedX = ix;
+        _cachedY = iy;
         _rynWebView = new RynWebView(_webview, _app);
+        if (_commandHandler is not null) _rynWebView.SetCommandHandler(_commandHandler);
+        if (_options.AllowedOrigins.Count > 0) _rynWebView.SetAllowedOrigins(_options.AllowedOrigins.ToList());
+        else if (_options.Url is not null) _rynWebView.SetAllowedOrigins([_options.Url.GetLeftPart(UriPartial.Authority)]);
+        if (_options.DevTools) _rynWebView.InjectConsoleForwardScript();
+        _rynWebView.InjectFileDropScript();
+        if (_options.TitleBarStyle is TitleBarStyle.Hidden or TitleBarStyle.Overlay) InjectTitleBarInsets();
 
-        // Wire command dispatcher if configured
-        if (_commandHandler is not null)
-            _rynWebView.SetCommandHandler(_commandHandler);
+        _themeDetector = new SystemThemeDetector();
+        _themeDetector.ThemeChanged += t =>
+            ThemeChanged?.Invoke(this, new ThemeChangedEventArgs { Theme = t });
+        _themeDetector.StartPolling(TimeSpan.FromSeconds(2));
 
-        // Configure CORS origin policy
-        if (_options.AllowedOrigins.Count > 0)
-            _rynWebView.SetAllowedOrigins(_options.AllowedOrigins.ToList());
-        else if (_options.Url is not null)
-            _rynWebView.SetAllowedOrigins([_options.Url.GetLeftPart(UriPartial.Authority)]);
+        if (_options.PersistWindowState)
+        {
+            _statePersistence = new WindowStatePersistence(_options.ApplicationId);
+            var state = _statePersistence.Load();
+            if (state is not null)
+            {
+                Saucer.saucer_window_set_size(_window, state.Width, state.Height);
+                _cachedWidth = state.Width;
+                _cachedHeight = state.Height;
+            }
+        }
 
-        // Inject console log forwarding script (dev mode only)
-        if (_options.DevTools)
-            _rynWebView.InjectConsoleForwardScript();
-
-        // Inject title bar safe-area insets as CSS variables
-        if (_options.TitleBarStyle is TitleBarStyle.Hidden or TitleBarStyle.Overlay)
-            InjectTitleBarInsets();
-
-        // Subscribe to window events
         SubscribeWindowEvents();
-
-        // Navigate to initial content
         if (_options.Url != null)
         {
             Span<byte> urlBuf = stackalloc byte[256];
@@ -273,71 +261,41 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
             _localServer = new LocalWebServer(_options.ContentDirectory, _options.UseHttps);
             _localServer.StartAsync().GetAwaiter().GetResult();
             _localServer.SetWebView(_rynWebView);
-
             var serverUrl = _localServer.Url;
             _rynWebView.SetAllowedOrigins([serverUrl.TrimEnd('/')]);
-
             Span<byte> urlBuf = stackalloc byte[256];
             var urlStr = Utf8String.Create(serverUrl, urlBuf);
             Saucer.saucer_webview_set_url_str(_webview, urlStr.Pointer);
             urlStr.Dispose();
         }
-        else if (_options.ContentDirectory != null)
-        {
-            _rynWebView.SetContentDirectory(_options.ContentDirectory);
-            _rynWebView.NavigateToAppScheme();
-        }
-        else if (_options.Html != null)
-        {
-            // Serve HTML via the ryn:// scheme handler (same origin as IPC, no CORS issues)
-            _rynWebView.SetHtmlContent(_options.Html);
-            _rynWebView.NavigateToAppScheme();
-        }
-
-        // Notify that native resources are ready
+        else if (_options.ContentDirectory != null) { _rynWebView.SetContentDirectory(_options.ContentDirectory); _rynWebView.NavigateToAppScheme(); }
+        else if (_options.Html != null) { _rynWebView.SetHtmlContent(_options.Html); _rynWebView.NavigateToAppScheme(); }
         OnNativeReady?.Invoke((nint)_app);
-
-        // Show the window
         Saucer.saucer_window_show(_window);
     }
 
     private void ApplyWindowOptions()
     {
-        // Title
         Span<byte> buf = stackalloc byte[256];
         var titleStr = Utf8String.Create(_options.Title, buf);
         Saucer.saucer_window_set_title(_window, titleStr.Pointer);
         titleStr.Dispose();
-
-        // Size
         Saucer.saucer_window_set_size(_window, _options.Width, _options.Height);
-
-        // Resizable
         Saucer.saucer_window_set_resizable(_window, (byte)(_options.Resizable ? 1 : 0));
-
-        // Decorations
         switch (_options.TitleBarStyle)
         {
             case TitleBarStyle.Hidden:
-                if (OperatingSystem.IsMacOS())
-                    ApplyMacOsTitleBar(overlay: false);
-                else
-                    Saucer.saucer_window_set_decorations(_window, saucer_window_decoration.SAUCER_WINDOW_DECORATION_PARTIAL);
+                if (OperatingSystem.IsMacOS()) ApplyMacOsTitleBar(overlay: false);
+                else Saucer.saucer_window_set_decorations(_window, saucer_window_decoration.SAUCER_WINDOW_DECORATION_PARTIAL);
                 break;
-
             case TitleBarStyle.Overlay:
-                if (OperatingSystem.IsMacOS())
-                    ApplyMacOsTitleBar(overlay: true);
-                else
-                    Saucer.saucer_window_set_decorations(_window, saucer_window_decoration.SAUCER_WINDOW_DECORATION_PARTIAL);
+                if (OperatingSystem.IsMacOS()) ApplyMacOsTitleBar(overlay: true);
+                else Saucer.saucer_window_set_decorations(_window, saucer_window_decoration.SAUCER_WINDOW_DECORATION_PARTIAL);
                 break;
-
             case TitleBarStyle.Frameless:
                 Saucer.saucer_window_set_decorations(_window, saucer_window_decoration.SAUCER_WINDOW_DECORATION_NONE);
                 break;
         }
-
-        // Icon
         if (_options.IconPath is not null && File.Exists(_options.IconPath))
         {
             Span<byte> iconBuf = stackalloc byte[1024];
@@ -346,37 +304,21 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
             System.Runtime.CompilerServices.Unsafe.SkipInit(out iconError);
             var icon = Saucer.saucer_icon_new_from_file(iconStr.Pointer, &iconError);
             iconStr.Dispose();
-            if (icon != null && iconError == 0)
-            {
-                Saucer.saucer_window_set_icon(_window, icon);
-                Saucer.saucer_icon_free(icon);
-            }
+            if (icon != null && iconError == 0) { Saucer.saucer_window_set_icon(_window, icon); Saucer.saucer_icon_free(icon); }
         }
-
-        // Dev tools
-        if (_options.DevTools)
-        {
-            Saucer.saucer_webview_set_dev_tools(_webview, 1);
-            Saucer.saucer_webview_set_context_menu(_webview, 1);
-        }
+        if (_options.DevTools) { Saucer.saucer_webview_set_dev_tools(_webview, 1); Saucer.saucer_webview_set_context_menu(_webview, 1); }
     }
 
     private void InjectTitleBarInsets()
     {
         double left = 0, top = 0;
-
-        if (OperatingSystem.IsMacOS())
-        {
-            (left, top) = GetMacOsInsets();
-        }
-
+        if (OperatingSystem.IsMacOS()) (left, top) = GetMacOsInsets();
         if (left > 0 || top > 0)
         {
             var leftPx = left.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
             var topPx = top.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-            var css = $"document.documentElement.style.setProperty('--ryn-titlebar-inset-left','{leftPx}px');" +
-                      $"document.documentElement.style.setProperty('--ryn-titlebar-inset-top','{topPx}px');";
-#pragma warning disable CA2012 // Inject is synchronous, returns completed ValueTask
+            var css = $"document.documentElement.style.setProperty('--ryn-titlebar-inset-left','{leftPx}px');" + $"document.documentElement.style.setProperty('--ryn-titlebar-inset-top','{topPx}px');";
+#pragma warning disable CA2012
             _rynWebView!.InjectScriptAsync(css);
 #pragma warning restore CA2012
         }
@@ -385,70 +327,41 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
     [System.Runtime.Versioning.SupportedOSPlatform("macos")]
     private (double Left, double Top) GetMacOsInsets()
     {
-        nuint size;
-        System.Runtime.CompilerServices.Unsafe.SkipInit(out size);
+        nuint size; System.Runtime.CompilerServices.Unsafe.SkipInit(out size);
         Saucer.saucer_window_native(_window, 0, null, &size);
         if (size == 0 || size > 64) return (70, 28);
-
         Span<byte> buf = stackalloc byte[(int)size];
-        fixed (byte* ptr = buf)
-        {
-            Saucer.saucer_window_native(_window, 0, ptr, &size);
-            var nsWindow = System.Runtime.InteropServices.MemoryMarshal.Read<nint>(buf);
-            if (nsWindow != 0)
-                return MacOsTitleBar.GetTrafficLightInsets(nsWindow);
-        }
+        fixed (byte* ptr = buf) { Saucer.saucer_window_native(_window, 0, ptr, &size); var nsWindow = System.Runtime.InteropServices.MemoryMarshal.Read<nint>(buf); if (nsWindow != 0) return MacOsTitleBar.GetTrafficLightInsets(nsWindow); }
         return (70, 28);
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("macos")]
     private void ApplyMacOsTitleBar(bool overlay)
     {
-        nuint size;
-        System.Runtime.CompilerServices.Unsafe.SkipInit(out size);
+        nuint size; System.Runtime.CompilerServices.Unsafe.SkipInit(out size);
         Saucer.saucer_window_native(_window, 0, null, &size);
         if (size == 0 || size > 64) return;
-
         Span<byte> buf = stackalloc byte[(int)size];
-        fixed (byte* ptr = buf)
-        {
-            Saucer.saucer_window_native(_window, 0, ptr, &size);
-            var nsWindow = System.Runtime.InteropServices.MemoryMarshal.Read<nint>(buf);
-            if (nsWindow != 0)
-                MacOsTitleBar.Apply(nsWindow, overlay);
-        }
+        fixed (byte* ptr = buf) { Saucer.saucer_window_native(_window, 0, ptr, &size); var nsWindow = System.Runtime.InteropServices.MemoryMarshal.Read<nint>(buf); if (nsWindow != 0) MacOsTitleBar.Apply(nsWindow, overlay); }
     }
 
     private void SubscribeWindowEvents()
     {
-        // CLOSE event — allow close
-        Saucer.saucer_window_on(
-            _window,
-            saucer_window_event.SAUCER_WINDOW_EVENT_CLOSE,
-            (void*)(delegate* unmanaged[Cdecl]<saucer_window*, void*, saucer_policy>)&OnWindowClose,
-            1,
-            _selfHandle);
-
-        // CLOSED event — signal TCS and quit
-        Saucer.saucer_window_on(
-            _window,
-            saucer_window_event.SAUCER_WINDOW_EVENT_CLOSED,
-            (void*)(delegate* unmanaged[Cdecl]<saucer_window*, void*, void>)&OnWindowClosed,
-            1,
-            _selfHandle);
-
-        // RESIZE event — update cached size
-        Saucer.saucer_window_on(
-            _window,
-            saucer_window_event.SAUCER_WINDOW_EVENT_RESIZE,
-            (void*)(delegate* unmanaged[Cdecl]<saucer_window*, int, int, void*, void>)&OnWindowResize,
-            1,
-            _selfHandle);
+        Saucer.saucer_window_on(_window, saucer_window_event.SAUCER_WINDOW_EVENT_CLOSE, (void*)(delegate* unmanaged[Cdecl]<saucer_window*, void*, saucer_policy>)&OnWindowClose, 1, _selfHandle);
+        Saucer.saucer_window_on(_window, saucer_window_event.SAUCER_WINDOW_EVENT_CLOSED, (void*)(delegate* unmanaged[Cdecl]<saucer_window*, void*, void>)&OnWindowClosed, 1, _selfHandle);
+        Saucer.saucer_window_on(_window, saucer_window_event.SAUCER_WINDOW_EVENT_RESIZE, (void*)(delegate* unmanaged[Cdecl]<saucer_window*, int, int, void*, void>)&OnWindowResize, 1, _selfHandle);
+        Saucer.saucer_window_on(_window, saucer_window_event.SAUCER_WINDOW_EVENT_FOCUS, (void*)(delegate* unmanaged[Cdecl]<saucer_window*, byte, void*, void>)&OnWindowFocus, 1, _selfHandle);
+        Saucer.saucer_window_on(_window, saucer_window_event.SAUCER_WINDOW_EVENT_MAXIMIZE, (void*)(delegate* unmanaged[Cdecl]<saucer_window*, byte, void*, void>)&OnWindowMaximize, 1, _selfHandle);
+        Saucer.saucer_window_on(_window, saucer_window_event.SAUCER_WINDOW_EVENT_MINIMIZE, (void*)(delegate* unmanaged[Cdecl]<saucer_window*, byte, void*, void>)&OnWindowMinimize, 1, _selfHandle);
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static saucer_policy OnWindowClose(saucer_window* window, void* userdata)
     {
+        var self = NativeCallbackHelper.Resolve<RynWindow>(userdata);
+        var args = new WindowClosingEventArgs();
+        self.Closing?.Invoke(self, args);
+        if (args.Cancel) { self._rynWebView?.EmitEvent("window.closeCancelled", "{}"); return saucer_policy.SAUCER_POLICY_BLOCK; }
         return saucer_policy.SAUCER_POLICY_ALLOW;
     }
 
@@ -456,6 +369,14 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
     private static void OnWindowClosed(saucer_window* window, void* userdata)
     {
         var self = NativeCallbackHelper.Resolve<RynWindow>(userdata);
+        self._statePersistence?.Save(new WindowStateData
+        {
+            Width = Volatile.Read(ref self._cachedWidth),
+            Height = Volatile.Read(ref self._cachedHeight),
+            X = Volatile.Read(ref self._cachedX),
+            Y = Volatile.Read(ref self._cachedY),
+        });
+        self.Closed?.Invoke(self, EventArgs.Empty);
         self._closeTcs.TrySetResult();
         Saucer.saucer_application_quit(self._app);
     }
@@ -466,48 +387,63 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         var self = NativeCallbackHelper.Resolve<RynWindow>(userdata);
         self._cachedWidth = w;
         self._cachedHeight = h;
+        self.Resized?.Invoke(self, new WindowResizedEventArgs { Width = w, Height = h });
+        self._rynWebView?.EmitEvent("window.resized", $"{{\"width\":{w},\"height\":{h}}}");
+        self.CheckPositionChanged(window);
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void OnWindowFocus(saucer_window* window, byte focused, void* userdata)
+    {
+        var self = NativeCallbackHelper.Resolve<RynWindow>(userdata);
+        if (focused != 0) { self.Focused?.Invoke(self, EventArgs.Empty); self._rynWebView?.EmitEvent("window.focused", "{}"); self.CheckPositionChanged(window); }
+        else { self.Blurred?.Invoke(self, EventArgs.Empty); self._rynWebView?.EmitEvent("window.blurred", "{}"); }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void OnWindowMaximize(saucer_window* window, byte maximized, void* userdata)
+    {
+        var self = NativeCallbackHelper.Resolve<RynWindow>(userdata);
+        var state = maximized != 0 ? WindowState.Maximized : WindowState.Normal;
+        self.StateChanged?.Invoke(self, new WindowStateChangedEventArgs { State = state });
+        var stateName = state == WindowState.Maximized ? "maximized" : "normal";
+        self._rynWebView?.EmitEvent("window.stateChanged", $"{{\"state\":\"{stateName}\"}}");
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void OnWindowMinimize(saucer_window* window, byte minimized, void* userdata)
+    {
+        var self = NativeCallbackHelper.Resolve<RynWindow>(userdata);
+        var state = minimized != 0 ? WindowState.Minimized : WindowState.Normal;
+        self.StateChanged?.Invoke(self, new WindowStateChangedEventArgs { State = state });
+        var stateName = state == WindowState.Minimized ? "minimized" : "normal";
+        self._rynWebView?.EmitEvent("window.stateChanged", $"{{\"state\":\"{stateName}\"}}");
+    }
+
+    private void CheckPositionChanged(saucer_window* window)
+    {
+        int x, y;
+        Saucer.saucer_window_position(window, &x, &y);
+        var prevX = _cachedX; var prevY = _cachedY;
+        _cachedX = x; _cachedY = y;
+        if (prevX != x || prevY != y) { Moved?.Invoke(this, new WindowMovedEventArgs { X = x, Y = y }); _rynWebView?.EmitEvent("window.moved", $"{{\"x\":{x},\"y\":{y}}}"); }
     }
 
     private void DisposeNative()
     {
-        if (_localServer is not null)
-        {
-            _localServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            _localServer = null;
-        }
-
-        _rynWebView?.Dispose();
-        _rynWebView = null;
-
-        if (_webview != null)
-        {
-            Saucer.saucer_webview_free(_webview);
-            _webview = null;
-        }
-
-        if (_window != null)
-        {
-            Saucer.saucer_window_free(_window);
-            _window = null;
-        }
-
-        if (_selfHandle != null)
-        {
-            NativeCallbackHelper.Free(_selfHandle);
-            _selfHandle = null;
-        }
-
-        if (_app != null)
-        {
-            Saucer.saucer_application_free(_app);
-            _app = null;
-        }
+        if (_localServer is not null) { _localServer.DisposeAsync().AsTask().GetAwaiter().GetResult(); _localServer = null; }
+        _rynWebView?.Dispose(); _rynWebView = null;
+        if (_webview != null) { Saucer.saucer_webview_free(_webview); _webview = null; }
+        if (_window != null) { Saucer.saucer_window_free(_window); _window = null; }
+        if (_selfHandle != null) { NativeCallbackHelper.Free(_selfHandle); _selfHandle = null; }
+        if (_app != null) { Saucer.saucer_application_free(_app); _app = null; }
     }
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        _themeDetector?.Dispose();
         _localServer?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _rynWebView?.Dispose();
         _closeTcs.TrySetCanceled();

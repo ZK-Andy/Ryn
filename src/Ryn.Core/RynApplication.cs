@@ -58,9 +58,17 @@ public sealed partial class RynApplication : IAsyncDisposable
 
         foreach (var plugin in _plugins)
         {
+            try
+            {
 #pragma warning disable CA1849 // Intentional sync-over-async: no event loop exists yet, so no deadlock risk
-            plugin.InitializeAsync(cts.Token).AsTask().GetAwaiter().GetResult();
+                plugin.InitializeAsync(cts.Token).AsTask().GetAwaiter().GetResult();
 #pragma warning restore CA1849
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                System.Diagnostics.Debug.WriteLine($"Plugin '{plugin.Name}' failed to initialize: {ex.Message}");
+            }
         }
 
         var options = _services.GetRequiredService<RynOptions>();
