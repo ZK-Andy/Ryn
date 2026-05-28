@@ -11,7 +11,7 @@ public static class ServiceCollectionExtensions
         configure?.Invoke(options);
 
         services.AddSingleton(options);
-        services.AddSingleton<TrayService>();
+        services.AddSingleton(sp => new TrayService(sp.GetRequiredService<TrayOptions>()));
         services.AddSingleton<TrayCommands>();
         services.AddSingleton<IRynPlugin, TrayPlugin>();
         services.AddTrayCommands();

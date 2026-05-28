@@ -24,7 +24,6 @@ internal sealed partial class WindowsTrayBackend : ITrayBackend
     private const int WmRButtonUp = 0x0205;
 
     private const int TpmLeftAlign = 0x0000;
-    private const int TpmReturncmd = 0x0100;
 
     private const int MfString = 0x0000;
     private const int MfSeparator = 0x0800;
@@ -63,6 +62,16 @@ internal sealed partial class WindowsTrayBackend : ITrayBackend
             _thread.SetApartmentState(ApartmentState.STA);
             _thread.Start();
             _readyEvent.Wait();
+        }
+        else if (!_iconAdded && _hwnd != 0)
+        {
+            var nid = CreateNotifyIconData();
+            nid.uFlags = NifMessage | NifIcon | NifTip;
+            nid.uCallbackMessage = WmTrayCallback;
+            nid.hIcon = _hIcon;
+            nid.szTip = tooltip.Length > 127 ? tooltip[..127] : tooltip;
+            ShellNotifyIcon(NimAdd, ref nid);
+            _iconAdded = true;
         }
         else if (_iconAdded)
         {
@@ -208,7 +217,7 @@ internal sealed partial class WindowsTrayBackend : ITrayBackend
 
         GetCursorPos(out var pt);
         SetForegroundWindow(_hwnd);
-        TrackPopupMenuEx(_hMenu, TpmLeftAlign | TpmReturncmd, pt.X, pt.Y, _hwnd, nint.Zero);
+        TrackPopupMenuEx(_hMenu, TpmLeftAlign, pt.X, pt.Y, _hwnd, nint.Zero);
         PostMessage(_hwnd, 0, nint.Zero, nint.Zero); // WM_NULL to dismiss
     }
 

@@ -28,7 +28,12 @@ internal sealed partial class LinuxTrayBackend : ITrayBackend
 
     public void Show(string? iconPath, string tooltip)
     {
-        if (_indicator != 0) return;
+        if (_indicator != 0)
+        {
+            if (_available)
+                app_indicator_set_status(_indicator, AppIndicatorStatus.Active);
+            return;
+        }
 
         if (!TryLoadLibraries())
         {
