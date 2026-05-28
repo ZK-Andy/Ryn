@@ -16,6 +16,10 @@ public sealed class TrayService : IDisposable
 
         if (OperatingSystem.IsWindows())
             _backend = new WindowsTrayBackend();
+        else if (OperatingSystem.IsMacOS())
+            _backend = new MacOsTrayBackend();
+        else if (OperatingSystem.IsLinux())
+            _backend = new LinuxTrayBackend();
         else
             _backend = new StubTrayBackend();
 
