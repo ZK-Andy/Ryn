@@ -22,10 +22,10 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
 
     private CommandDispatchHandler? _commandHandler;
 
-    private string _cachedTitle;
+    private volatile string _cachedTitle;
     private int _cachedWidth;
     private int _cachedHeight;
-    private bool _cachedResizable;
+    private volatile bool _cachedResizable;
     private int _cachedX;
     private int _cachedY;
     private bool _disposed;

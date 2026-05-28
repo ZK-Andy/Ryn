@@ -51,7 +51,10 @@ public sealed class RynWebView : IRynWebView, IDisposable
           ryn.invoke = function(command, args) {
             return new Promise(function(resolve, reject) {
               var id = nextId++;
-              pending[id] = { resolve: resolve, reject: reject };
+              var timer = setTimeout(function() {
+                if (pending[id]) { delete pending[id]; reject(new Error('IPC timeout: ' + command)); }
+              }, 30000);
+              pending[id] = { resolve: resolve, reject: reject, timer: timer };
               var body = args ? JSON.stringify(args) : '{}';
               var x = new XMLHttpRequest();
               x.open('POST', '/ipc/cmd/' + id + '/' + encodeURIComponent(command), true);
@@ -62,6 +65,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
           ryn._resolve = function(id, ok, data) {
             var p = pending[id];
             if (!p) return;
+            clearTimeout(p.timer);
             delete pending[id];
             if (ok) {
               try { p.resolve(JSON.parse(data)); } catch(e) { p.resolve(data); }
@@ -146,7 +150,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
     private string? _contentDirectory;
     private readonly HashSet<string> _allowedOrigins = new(StringComparer.OrdinalIgnoreCase) { "ryn://app" };
 
-    private bool _disposed;
+    private volatile bool _disposed;
 
     internal unsafe RynWebView(saucer_webview* webview, saucer_application* app)
     {
@@ -409,9 +413,10 @@ public sealed class RynWebView : IRynWebView, IDisposable
         {
             var relativePath = (path is "/" or "") ? "index.html" : path.TrimStart('/');
             var filePath = Path.GetFullPath(Path.Combine(_contentDirectory, relativePath));
+            var canonicalBase = Path.GetFullPath(_contentDirectory + Path.DirectorySeparatorChar);
+            var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
-            // Path traversal guard
-            if (filePath.StartsWith(_contentDirectory, StringComparison.Ordinal) && File.Exists(filePath))
+            if (filePath.StartsWith(canonicalBase, comparison) && File.Exists(filePath))
             {
                 ServeFile(executor, filePath);
                 return;
@@ -712,6 +717,8 @@ public sealed class RynWebView : IRynWebView, IDisposable
     internal static string EscapeForJs(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)
              .Replace("'", "\\'", StringComparison.Ordinal)
+             .Replace("`", "\\`", StringComparison.Ordinal)
+             .Replace("$", "\\$", StringComparison.Ordinal)
              .Replace("\n", "\\n", StringComparison.Ordinal)
              .Replace("\r", "\\r", StringComparison.Ordinal)
              .Replace("\0", "\\0", StringComparison.Ordinal)
