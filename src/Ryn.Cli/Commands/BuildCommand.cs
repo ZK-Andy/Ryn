@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 
 namespace Ryn.Cli.Commands;
 
@@ -16,6 +17,24 @@ internal static class BuildCommand
         var projectDir = Path.GetDirectoryName(csproj)!;
         var projectName = Path.GetFileNameWithoutExtension(csproj);
         var useAot = args.Contains("--aot");
+        var embedContent = args.Contains("--embed");
+
+        if (embedContent)
+        {
+            var wwwroot = Path.Combine(projectDir, "wwwroot");
+            if (Directory.Exists(wwwroot))
+            {
+                var zipPath = Path.Combine(projectDir, "ryn_embedded_content.zip");
+                if (File.Exists(zipPath)) File.Delete(zipPath);
+                ZipFile.CreateFromDirectory(wwwroot, zipPath);
+                Console.WriteLine("  Embedded wwwroot content into zip");
+            }
+            else
+            {
+                Console.Error.WriteLine("  --embed specified but no wwwroot/ directory found.");
+                return 1;
+            }
+        }
 
         Console.WriteLine($"Building {projectName} for release...");
 
@@ -25,6 +44,8 @@ internal static class BuildCommand
             arguments += " -p:PublishAot=true";
             Console.WriteLine("  NativeAOT enabled");
         }
+        if (embedContent)
+            arguments += " -p:RynEmbedContent=true";
 
         var process = Process.Start(new ProcessStartInfo
         {

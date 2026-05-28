@@ -10,12 +10,12 @@ internal static class NewCommand
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Usage: ryn new <name> [--html]");
+            Console.Error.WriteLine("Usage: ryn new <name> [--vite]");
             return 1;
         }
 
         var name = args[0];
-
+        var useVite = args.Contains("--vite");
         if (!IsValidProjectName(name))
         {
             Console.Error.WriteLine($"Invalid project name: '{name}'. Use only letters, digits, and underscores.");
@@ -35,11 +35,21 @@ internal static class NewCommand
         Directory.CreateDirectory(Path.Combine(targetDir, "wwwroot"));
 
         File.WriteAllText(Path.Combine(targetDir, $"{name}.csproj"), GetCsproj(name, targetDir));
-        File.WriteAllText(Path.Combine(targetDir, "Program.cs"), GetProgramCs(name));
         File.WriteAllText(Path.Combine(targetDir, "Commands.cs"), GetCommandsCs(name));
-        File.WriteAllText(Path.Combine(targetDir, "wwwroot", "index.html"), GetIndexHtml(name));
         File.WriteAllText(Path.Combine(targetDir, "appsettings.json"), GetAppSettings(name));
         File.WriteAllText(Path.Combine(targetDir, "ryn.json"), GetRynJson());
+
+        if (useVite)
+        {
+            File.WriteAllText(Path.Combine(targetDir, "Program.cs"), GetViteProgramCs(name));
+            ScaffoldViteFrontend(targetDir, name);
+            Console.WriteLine("  Created Vite frontend");
+        }
+        else
+        {
+            File.WriteAllText(Path.Combine(targetDir, "Program.cs"), GetProgramCs(name));
+            File.WriteAllText(Path.Combine(targetDir, "wwwroot", "index.html"), GetIndexHtml(name));
+        }
 
         var sourceRoot = FindRynSourceRoot();
         if (sourceRoot is not null)
@@ -68,8 +78,23 @@ internal static class NewCommand
         Console.WriteLine();
         Console.WriteLine($"  Project '{name}' created successfully!");
         Console.WriteLine();
-        Console.WriteLine($"  cd {name}");
-        Console.WriteLine("  ryn dev");
+
+        if (useVite)
+        {
+            Console.WriteLine($"  cd {name}/frontend");
+            Console.WriteLine("  npm install");
+            Console.WriteLine("  npm run dev");
+            Console.WriteLine();
+            Console.WriteLine("  # In another terminal:");
+            Console.WriteLine($"  cd {name}");
+            Console.WriteLine("  ryn dev");
+        }
+        else
+        {
+            Console.WriteLine($"  cd {name}");
+            Console.WriteLine("  ryn dev");
+        }
+
         Console.WriteLine();
 
         return 0;
@@ -273,4 +298,152 @@ internal static class NewCommand
           }
         }
         """;
+
+    private static string GetViteProgramCs(string name) => $$"""
+        using Ryn.Core;
+        using Ryn.Ipc;
+        using {{name}};
+
+        public static class Program
+        {
+            [System.STAThread]
+            public static void Main(string[] args)
+            {
+                var app = RynApplication.CreateBuilder()
+                    .ConfigureOptions(opts =>
+                    {
+                        if (args.Contains("--vite"))
+                            opts.Url = new Uri("http://localhost:5173");
+                        else
+                            opts.ContentDirectory = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+                    })
+                    .ConfigureServices(services =>
+                    {
+                        services.AddRynCommands();
+                        services.AddAppCommands();
+                    })
+                    .Build();
+
+                app.Run();
+            }
+        }
+        """;
+
+    private static void ScaffoldViteFrontend(string targetDir, string name)
+    {
+        var frontendDir = Path.Combine(targetDir, "frontend");
+        var srcDir = Path.Combine(frontendDir, "src");
+
+        Directory.CreateDirectory(frontendDir);
+        Directory.CreateDirectory(srcDir);
+
+        File.WriteAllText(Path.Combine(frontendDir, "package.json"), GetVitePackageJson(name));
+        File.WriteAllText(Path.Combine(frontendDir, "vite.config.ts"), GetViteConfig());
+        File.WriteAllText(Path.Combine(frontendDir, "tsconfig.json"), GetViteTsConfig());
+        File.WriteAllText(Path.Combine(frontendDir, "index.html"), GetViteIndexHtml(name));
+        File.WriteAllText(Path.Combine(srcDir, "main.ts"), GetViteMainTs(name));
+        File.WriteAllText(Path.Combine(srcDir, "ryn.d.ts"), GetViteRynDts());
+    }
+
+#pragma warning disable CA1308 // npm package names require lowercase by convention
+    private static string GetVitePackageJson(string name) => $$"""
+        {
+          "name": "{{name.ToLowerInvariant()}}",
+          "private": true,
+          "type": "module",
+          "scripts": {
+            "dev": "vite",
+            "build": "tsc -b && vite build",
+            "preview": "vite preview"
+          },
+          "devDependencies": {
+            "typescript": "~5.8.0",
+            "vite": "^6.3.5"
+          }
+        }
+        """;
+
+    private static string GetViteConfig() => """
+        import { defineConfig } from 'vite'
+
+        export default defineConfig({
+          server: {
+            port: 5173,
+            strictPort: true,
+          },
+          build: {
+            outDir: '../wwwroot',
+            emptyOutDir: true,
+          },
+        })
+        """;
+
+    private static string GetViteTsConfig() => """
+        {
+          "compilerOptions": {
+            "target": "ES2022",
+            "module": "ESNext",
+            "moduleResolution": "bundler",
+            "strict": true,
+            "resolveJsonModule": true,
+            "isolatedModules": true,
+            "esModuleInterop": true,
+            "lib": ["ES2022", "DOM", "DOM.Iterable"],
+            "skipLibCheck": true,
+            "noEmit": true
+          },
+          "include": ["src/**/*.ts", "src/ryn.d.ts"]
+        }
+        """;
+
+    private static string GetViteIndexHtml(string name) => $$"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>{{name}}</title>
+        </head>
+        <body>
+          <div id="app"></div>
+          <script type="module" src="/src/main.ts"></script>
+        </body>
+        </html>
+        """;
+
+    private static string GetViteMainTs(string name) => $$"""
+        const app = document.getElementById('app')!;
+
+        app.innerHTML = `
+          <h1>{{name}}</h1>
+          <p>Built with Ryn + Vite</p>
+          <div class="card">
+            <h2>Try IPC</h2>
+            <div class="row">
+              <input id="name" type="text" placeholder="Your name" value="World" />
+              <button id="greet-btn">Greet</button>
+            </div>
+            <div class="result" id="result">Click Greet to call C#</div>
+          </div>
+        `;
+
+        document.getElementById('greet-btn')!.addEventListener('click', async () => {
+          const nameInput = document.getElementById('name') as HTMLInputElement;
+          const result = await window.__ryn.invoke('greet', { name: nameInput.value });
+          document.getElementById('result')!.textContent = result as string;
+        });
+        """;
+
+    private static string GetViteRynDts() => """
+        interface RynBridge {
+          invoke(command: string, args?: Record<string, unknown>): Promise<unknown>
+          on(event: string, callback: (data: unknown) => void): void
+          off(event: string, callback: (data: unknown) => void): void
+        }
+
+        interface Window {
+          __ryn: RynBridge
+        }
+        """;
+
 }
