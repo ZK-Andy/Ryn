@@ -5,6 +5,7 @@ using Ryn.Core.Internal;
 
 namespace Ryn.Core;
 
+/// <summary>The main entry point for a Ryn application, managing the window lifecycle and plugin initialization.</summary>
 public sealed partial class RynApplication : IAsyncDisposable
 {
     private readonly IServiceProvider _services;
@@ -19,16 +20,22 @@ public sealed partial class RynApplication : IAsyncDisposable
         _logger = services.GetService<ILogger<RynApplication>>() ?? NullLogger<RynApplication>.Instance;
     }
 
+    /// <summary>The dependency injection service provider for this application.</summary>
     public IServiceProvider Services => _services;
 
+    /// <summary>The application window. Only available after <see cref="RunAsync"/> has been called.</summary>
     public IRynWindow Window => _window ?? throw new InvalidOperationException("Application is not running");
 
+    /// <summary>The application webview. Only available after <see cref="RunAsync"/> has been called.</summary>
     public IRynWebView WebView => _window?.WebView ?? throw new InvalidOperationException("Application is not running");
 
+    /// <summary>Creates a new application builder with default options.</summary>
     public static RynApplicationBuilder CreateBuilder() => new(programmaticOptions: null);
 
+    /// <summary>Creates a new application builder with the specified options.</summary>
     public static RynApplicationBuilder CreateBuilder(RynOptions options) => new(options);
 
+    /// <summary>Initializes plugins, creates the window, and runs the native event loop until the window is closed.</summary>
     public ValueTask RunAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -81,6 +88,7 @@ public sealed partial class RynApplication : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>Synchronous convenience wrapper for <see cref="RunAsync"/>. Blocks the calling thread.</summary>
     public void Run(CancellationToken cancellationToken = default)
     {
 #pragma warning disable CA2012 // Intentional sync-over-async: convenience wrapper for [STAThread] Main
@@ -90,6 +98,7 @@ public sealed partial class RynApplication : IAsyncDisposable
 
     internal void AddPlugin(IRynPlugin plugin) => _plugins.Add(plugin);
 
+    /// <summary>Disposes the window, plugins, and service provider.</summary>
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
