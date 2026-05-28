@@ -23,23 +23,36 @@ dotnet --version
 # Should output 10.0.x or higher
 ```
 
-## 1. Install the CLI
+## 1. Install
+
+### From NuGet (recommended)
+
+Install the CLI:
 
 ```bash
 dotnet tool install -g Ryn.Cli
 ```
 
-Verify the installation:
+Verify:
 
 ```bash
 ryn --help
-```
-
-You can also check your environment for missing dependencies:
-
-```bash
 ryn doctor
 ```
+
+### From Source
+
+If you want to build Ryn itself or contribute:
+
+```bash
+git clone --recursive https://github.com/Yupmoh/Ryn.git
+cd Ryn
+bash build/download-native.sh   # macOS/Linux (or .\build\download-native.ps1 on Windows)
+dotnet build Ryn.slnx
+dotnet test Ryn.slnx
+```
+
+When working from source, the CLI is available via `dotnet run --project src/Ryn.Cli --`. For example: `dotnet run --project src/Ryn.Cli -- new MyApp`. Projects created from within the source tree automatically use project references instead of NuGet packages.
 
 ## 2. Create Your First App
 

@@ -15,26 +15,42 @@ Ryn gives .NET developers the Tauri experience without leaving C#. Native OS web
 
 ## Status
 
-**Early development** — Actively tested on macOS. Windows and Linux build in CI but need community testing.
+Tested on macOS and Windows. Linux builds in CI.
 
-## Getting Started (from source)
+## Installation
 
-### Prerequisites
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (preview)
-- [GitHub CLI](https://cli.github.com/) (`gh`) for downloading native libraries
-- Git with submodule support
-
-### Check your environment
+### Option 1: NuGet Packages (recommended)
 
 ```bash
-dotnet run --project src/Ryn.Cli -- doctor
+dotnet new console -n MyApp
+cd MyApp
+dotnet add package Ryn.Core
+dotnet add package Ryn.Ipc
 ```
 
-This checks your .NET SDK version, native libraries, WebView runtime, and build tools.
+Add plugins as needed:
 
-### macOS
+```bash
+dotnet add package Ryn.Plugins.FileSystem
+dotnet add package Ryn.Plugins.Dialog
+dotnet add package Ryn.Plugins.Clipboard
+dotnet add package Ryn.Plugins.Shell
+dotnet add package Ryn.Plugins.Notification
+dotnet add package Ryn.Plugins.Tray
+dotnet add package Ryn.Plugins.Updater
+```
 
+Install the CLI tool:
+
+```bash
+dotnet tool install -g Ryn.Cli
+```
+
+### Option 2: Build from Source
+
+Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), Git, and [GitHub CLI](https://cli.github.com/) (`gh`).
+
+**macOS:**
 ```bash
 git clone --recursive https://github.com/Yupmoh/Ryn.git
 cd Ryn
@@ -44,13 +60,7 @@ dotnet test Ryn.slnx
 dotnet run --project samples/Showcase  # run the demo app
 ```
 
-To build native libs from source (requires cmake + ninja):
-```bash
-bash build/build-native.sh
-```
-
-### Windows
-
+**Windows:**
 ```powershell
 git clone --recursive https://github.com/Yupmoh/Ryn.git
 cd Ryn
@@ -60,32 +70,41 @@ dotnet test Ryn.slnx
 dotnet run --project samples\Showcase
 ```
 
-### Linux
-
+**Linux:**
 ```bash
 git clone --recursive https://github.com/Yupmoh/Ryn.git
 cd Ryn
-
-# Install WebKitGTK (Ubuntu/Debian)
-sudo apt-get install libwebkitgtk-6.0-dev
-
-bash build/download-native.sh         # downloads prebuilt saucer libs
+sudo apt-get install libwebkitgtk-6.0-dev  # Ubuntu/Debian
+bash build/download-native.sh
 dotnet build Ryn.slnx
-dotnet test Ryn.slnx
 dotnet run --project samples/Showcase
 ```
 
+To build native saucer libs from source (requires cmake + ninja):
+```bash
+bash build/build-native.sh
+```
+
+Check your environment with `ryn doctor` (or `dotnet run --project src/Ryn.Cli -- doctor` from source).
+
 ## Creating an App
 
-### From the CLI
+### With the CLI
 
+```bash
+ryn new MyApp
+cd MyApp
+ryn dev
+```
+
+Or from source:
 ```bash
 dotnet run --project src/Ryn.Cli -- new MyApp
 cd MyApp
 dotnet run
 ```
 
-This scaffolds a project with project references to the local Ryn source. The generated app includes a sample IPC command, a dark-themed HTML frontend, and a `ryn.json` capability file.
+When run from within the Ryn source tree, `ryn new` generates project references. Otherwise it uses NuGet package references. The generated app includes a sample IPC command, a dark-themed HTML frontend, and a `ryn.json` capability file.
 
 ### Content serving
 
@@ -213,20 +232,23 @@ src/
   Ryn.Core             — Window management, app lifecycle, configuration, events
   Ryn.Interop          — Auto-generated saucer C bindings via ClangSharp
   Ryn.Ipc              — JS <> C# IPC bridge, source generator, capabilities, observability
-  Ryn.Plugins.*        — FileSystem, Dialog, Clipboard, Shell (spawn/PTY), Notification
+  Ryn.Plugins.*        — FileSystem, Dialog, Clipboard, Shell, Notification, Tray, Updater
   Ryn.Cli              — CLI: new, dev, build, bundle, doctor
-samples/               — 6 example applications
+samples/               — 8 example applications
 templates/             — dotnet new template pack
-tests/                 — 132 xUnit tests across 6 test projects
+tests/                 — 158 xUnit tests across 6 test projects
 benchmarks/            — BenchmarkDotNet suites (IPC, marshaling, JSON, escaping)
 docs/
   plan/PLAN.md         — Full project plan with milestone tracking
   plugin-authoring.md  — Guide for writing Ryn plugins
 ```
 
-## Writing Plugins
+## Documentation
 
-See [docs/plugin-authoring.md](docs/plugin-authoring.md) for a complete guide on creating Ryn plugins with commands, options, DI, events, and capability scopes.
+- [Getting Started](docs/getting-started.md) — Full walkthrough from install to bundle
+- [Architecture](docs/architecture.md) — IPC pipeline, threading model, security internals
+- [Plugin Authoring](docs/plugin-authoring.md) — Creating Ryn plugins with commands, options, DI, events
+- [Vite Integration](docs/vite-integration.md) — Using Vite + TypeScript with Ryn
 
 ## License
 
