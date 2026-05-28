@@ -14,6 +14,9 @@ public sealed partial class RynApplication : IAsyncDisposable
     private RynWindow? _window;
     private bool _disposed;
 
+    /// <summary>Fires when the app is opened via a registered deep link URL.</summary>
+    public event EventHandler<DeepLinkEventArgs>? DeepLinkReceived;
+
     internal RynApplication(IServiceProvider services)
     {
         _services = services;
@@ -72,6 +75,17 @@ public sealed partial class RynApplication : IAsyncDisposable
         }
 
         var options = _services.GetRequiredService<RynOptions>();
+
+        if (options.DeepLinkSchemes.Count > 0)
+        {
+            foreach (var scheme in options.DeepLinkSchemes)
+                DeepLinkHandler.RegisterScheme(scheme, options.Title);
+
+            var deepLink = DeepLinkHandler.CheckStartupArgs(options.DeepLinkSchemes);
+            if (deepLink is not null)
+                DeepLinkReceived?.Invoke(this, new DeepLinkEventArgs { Url = deepLink });
+        }
+
         _window = new RynWindow(options);
 
         // Wire IPC command dispatcher if registered (before Run, applied during OnReady)

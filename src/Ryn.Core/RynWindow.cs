@@ -28,7 +28,7 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
     private volatile bool _cachedResizable;
     private int _cachedX;
     private int _cachedY;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     /// <inheritdoc />
     public event EventHandler<WindowClosingEventArgs>? Closing;
