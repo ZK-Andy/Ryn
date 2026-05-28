@@ -48,6 +48,12 @@ public sealed class RynOptions
     /// <summary>Whether to extract and serve embedded content resources.</summary>
     public bool UseEmbeddedContent { get; set; }
 
+    /// <summary>Whether to automatically save and restore window position and size.</summary>
+    public bool PersistWindowState { get; set; }
+
+    /// <summary>Custom URL schemes to register for deep linking (e.g., "myapp").</summary>
+    public IList<string> DeepLinkSchemes { get; } = new List<string>();
+
     /// <summary>Additional origins allowed to access IPC commands.</summary>
     public IList<string> AllowedOrigins { get; } = new List<string>();
 }

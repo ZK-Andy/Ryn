@@ -109,6 +109,24 @@ public sealed class RynWebView : IRynWebView, IDisposable
         })();
         """u8;
 
+    private static ReadOnlySpan<byte> FileDropScript =>
+        """
+        (function(){
+          document.addEventListener('dragover', function(e) { e.preventDefault(); });
+          document.addEventListener('drop', function(e) {
+            e.preventDefault();
+            var files = [];
+            for (var i = 0; i < e.dataTransfer.files.length; i++) {
+              files.push(e.dataTransfer.files[i].name);
+            }
+            if (files.length === 0) return;
+            var data = { files: files, x: e.clientX, y: e.clientY };
+            window.__ryn._emit('fileDrop', data);
+            window.__ryn.invoke('__ryn.fileDrop', data);
+          });
+        })();
+        """u8;
+
     private nint _webview;
     private nint _app;
     private nint _selfHandle;
@@ -119,6 +137,9 @@ public sealed class RynWebView : IRynWebView, IDisposable
     private readonly ConcurrentDictionary<string, Func<RynSchemeRequest, ValueTask<RynSchemeResponse>>> _schemeHandlers = new();
 
     private CommandDispatchHandler? _commandHandler;
+
+    /// <inheritdoc />
+    public event EventHandler<FileDropEventArgs>? FileDrop;
 
     // HTML content to serve from ryn://app/
     private string? _htmlContent;
@@ -298,6 +319,21 @@ public sealed class RynWebView : IRynWebView, IDisposable
         }
     }
 
+    internal unsafe void InjectFileDropScript()
+    {
+        fixed (byte* ptr = FileDropScript)
+        {
+            Saucer.saucer_webview_inject(
+                (saucer_webview*)_webview,
+                (sbyte*)ptr,
+                saucer_script_time.SAUCER_SCRIPT_TIME_CREATION,
+                0,
+                0);
+        }
+    }
+
+    internal void RaiseFileDrop(FileDropEventArgs args) => FileDrop?.Invoke(this, args);
+
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static unsafe void OnAppSchemeRequest(saucer_scheme_request* request, saucer_scheme_executor* executor, void* userdata)
     {
@@ -446,6 +482,12 @@ public sealed class RynWebView : IRynWebView, IDisposable
 
     private async Task DispatchCommandAsync(long id, string command, byte[] args)
     {
+        if (command == "__ryn.fileDrop")
+        {
+            HandleFileDropCommand(id, args);
+            return;
+        }
+
         if (_commandHandler is null) return;
 
         try
@@ -463,9 +505,32 @@ public sealed class RynWebView : IRynWebView, IDisposable
         }
     }
 
+    private void HandleFileDropCommand(long id, byte[] args)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(args);
+            var root = doc.RootElement;
+            var files = new List<string>();
+            if (root.TryGetProperty("files", out var filesEl))
+            {
+                foreach (var f in filesEl.EnumerateArray())
+                    if (f.GetString() is { } name) files.Add(name);
+            }
+            var x = root.TryGetProperty("x", out var xEl) ? xEl.GetInt32() : 0;
+            var y = root.TryGetProperty("y", out var yEl) ? yEl.GetInt32() : 0;
+            RaiseFileDrop(new FileDropEventArgs { FileNames = files, X = x, Y = y });
+            ExecuteOnUiThread($"window.__ryn._resolve({id},true,'null')");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            ExecuteOnUiThread($"window.__ryn._resolve({id},false,'\"Invalid file drop data\"')");
+        }
+    }
+
     private unsafe void ExecuteOnUiThread(string js)
     {
-        if (_app == 0 || _webview == 0) return;
+        if (_disposed || _app == 0 || _webview == 0) return;
 
         var webview = _webview;
         var app = _app;

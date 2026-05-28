@@ -137,6 +137,30 @@ public static class ShellCommands
         return null;
     }
 
+    private static readonly string[] DangerousPrefixes =
+        ["--proxy", "--socks", "--upload-file", "--data-binary"];
+
+    internal static void ValidateArguments(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            foreach (var prefix in DangerousPrefixes)
+            {
+                if (arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException($"Argument '{arg}' is blocked for security.");
+            }
+
+            if (_options?.DenyArgPrefixes is { Count: > 0 } deny)
+            {
+                foreach (var d in deny)
+                {
+                    if (arg.StartsWith(d, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException($"Argument '{arg}' is blocked by policy.");
+                }
+            }
+        }
+    }
+
     internal static void PopulateArguments(ProcessStartInfo psi, string argsJson)
     {
         if (string.IsNullOrEmpty(argsJson) || argsJson == "{}")
@@ -146,6 +170,7 @@ public static class ShellCommands
         if (argsArray is null)
             return;
 
+        ValidateArguments(argsArray);
         foreach (var arg in argsArray)
             psi.ArgumentList.Add(arg);
     }

@@ -39,6 +39,7 @@ internal sealed partial class WindowsTrayBackend : ITrayBackend
 
     private readonly WndProcDelegate _wndProcRef;
     private readonly ManualResetEventSlim _readyEvent = new();
+    private readonly object _menuLock = new();
     private readonly List<TrayMenuItem> _menuItems = [];
     private readonly Dictionary<int, string> _menuIdMap = [];
 
@@ -90,7 +91,7 @@ internal sealed partial class WindowsTrayBackend : ITrayBackend
 
     public void SetMenu(IReadOnlyList<TrayMenuItem> items)
     {
-        lock (_menuItems)
+        lock (_menuLock)
         {
             _menuItems.Clear();
             _menuItems.AddRange(items);
@@ -165,7 +166,7 @@ internal sealed partial class WindowsTrayBackend : ITrayBackend
         {
             var menuId = (int)(wParam & 0xFFFF);
             string? itemId;
-            lock (_menuItems)
+            lock (_menuLock)
             {
                 _menuIdMap.TryGetValue(menuId, out itemId);
             }
@@ -183,7 +184,7 @@ internal sealed partial class WindowsTrayBackend : ITrayBackend
             DestroyMenu(_hMenu);
 
         _hMenu = CreatePopupMenu();
-        lock (_menuItems)
+        lock (_menuLock)
         {
             _menuIdMap.Clear();
             for (var i = 0; i < _menuItems.Count; i++)

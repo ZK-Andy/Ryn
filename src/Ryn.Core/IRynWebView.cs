@@ -20,4 +20,7 @@ public interface IRynWebView
 
     /// <summary>Emits a named event to the JavaScript side via <c>window.__ryn</c>.</summary>
     public void EmitEvent(string eventName, string jsonData);
+
+    /// <summary>Fires when files are dropped onto the webview (names only, not full paths).</summary>
+    public event EventHandler<FileDropEventArgs>? FileDrop;
 }
