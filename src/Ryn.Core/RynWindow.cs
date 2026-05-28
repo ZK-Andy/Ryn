@@ -356,7 +356,7 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
             Saucer.saucer_window_native(_window, 0, ptr, &size);
             var nsWindow = System.Runtime.InteropServices.MemoryMarshal.Read<nint>(buf);
             if (nsWindow != 0)
-                MacOsTitleBar.ApplyTransparentTitleBar(nsWindow);
+                MacOsTitleBar.ApplyHiddenTitleBar(nsWindow);
         }
     }
 
