@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Builder;
@@ -8,6 +7,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 
@@ -36,7 +37,6 @@ internal sealed class LocalWebServer : IAsyncDisposable
 
     internal async Task StartAsync()
     {
-        var port = FindAvailablePort();
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
 
@@ -45,17 +45,19 @@ internal sealed class LocalWebServer : IAsyncDisposable
             _cert = GenerateSelfSignedCert();
             if (OperatingSystem.IsWindows())
                 InstallCertToUserStore(_cert);
+            if (OperatingSystem.IsMacOS())
+                InstallCertToMacKeychain(_cert);
 
             builder.WebHost.ConfigureKestrel(k =>
             {
-                k.Listen(IPAddress.Loopback, port, o => o.UseHttps(_cert));
+                k.Listen(IPAddress.Loopback, 0, o => o.UseHttps(_cert));
             });
         }
         else
         {
             builder.WebHost.ConfigureKestrel(k =>
             {
-                k.Listen(IPAddress.Loopback, port);
+                k.Listen(IPAddress.Loopback, 0);
             });
         }
 
@@ -99,16 +101,13 @@ internal sealed class LocalWebServer : IAsyncDisposable
         await _app.StartAsync().ConfigureAwait(false);
 
         var scheme = _useHttps ? "https" : "http";
-        Url = $"{scheme}://localhost:{port}";
-    }
-
-    private static int FindAvailablePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
+        var addresses = _app.Services.GetRequiredService<IServer>()
+            .Features.Get<IServerAddressesFeature>();
+        var address = addresses?.Addresses.FirstOrDefault();
+        if (address is not null && Uri.TryCreate(address, UriKind.Absolute, out var uri))
+            Url = $"{scheme}://localhost:{uri.Port}";
+        else
+            Url = address ?? $"{scheme}://localhost";
     }
 
     private async Task HandleIpcCommand(HttpContext ctx)
@@ -194,6 +193,63 @@ internal sealed class LocalWebServer : IAsyncDisposable
         store.Add(cert);
     }
 
+    private string? _macCertPath;
+
+    private void InstallCertToMacKeychain(X509Certificate2 cert)
+    {
+        try
+        {
+            _macCertPath = Path.Combine(Path.GetTempPath(), $"ryn_cert_{Environment.ProcessId}.pem");
+            var pem = cert.ExportCertificatePem();
+            File.WriteAllText(_macCertPath, pem);
+
+            var psi = new System.Diagnostics.ProcessStartInfo("security")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add("add-trusted-cert");
+            psi.ArgumentList.Add("-r");
+            psi.ArgumentList.Add("trustAsRoot");
+            psi.ArgumentList.Add("-p");
+            psi.ArgumentList.Add("ssl");
+            psi.ArgumentList.Add(_macCertPath);
+
+            var process = System.Diagnostics.Process.Start(psi);
+            process?.WaitForExit(5000);
+        }
+        catch (InvalidOperationException) { }
+        catch (System.ComponentModel.Win32Exception) { }
+    }
+
+    private void RemoveCertFromMacKeychain()
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("security")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add("delete-certificate");
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add("localhost");
+
+            var process = System.Diagnostics.Process.Start(psi);
+            process?.WaitForExit(5000);
+        }
+        catch (InvalidOperationException) { }
+        catch (System.ComponentModel.Win32Exception) { }
+
+        if (_macCertPath is not null)
+        {
+            try { File.Delete(_macCertPath); }
+            catch (IOException) { }
+        }
+    }
+
     private void RemoveCertFromUserStore()
     {
         if (_cert is null) return;
@@ -218,8 +274,13 @@ internal sealed class LocalWebServer : IAsyncDisposable
             _app = null;
         }
 
-        if (_useHttps && OperatingSystem.IsWindows())
-            RemoveCertFromUserStore();
+        if (_useHttps)
+        {
+            if (OperatingSystem.IsWindows())
+                RemoveCertFromUserStore();
+            if (OperatingSystem.IsMacOS())
+                RemoveCertFromMacKeychain();
+        }
 
         _cert?.Dispose();
         _cert = null;

@@ -41,7 +41,8 @@ internal static partial class MacOsTitleBar
         var frame = objc_msgSend_rect(contentView, sel_registerName("frame"));
 
         // Position: right of traffic lights (x=70), top of window, full remaining width, 28px tall
-        var dragFrame = new NSRect { X = 70, Y = frame.Height - 28, Width = frame.Width - 70, Height = 28 };
+        var dragWidth = Math.Max(0, frame.Width - 70);
+        var dragFrame = new NSRect { X = 70, Y = frame.Height - 28, Width = dragWidth, Height = 28 };
 
         // Create the drag view
         var alloc = objc_msgSend_ret_nint((void*)_dragViewClass, sel_registerName("alloc"));
