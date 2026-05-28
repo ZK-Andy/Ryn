@@ -249,6 +249,10 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         else if (_options.Url is not null)
             _rynWebView.SetAllowedOrigins([_options.Url.GetLeftPart(UriPartial.Authority)]);
 
+        // Inject title bar safe-area insets as CSS variables
+        if (_options.TitleBarStyle is TitleBarStyle.Hidden or TitleBarStyle.Overlay)
+            InjectTitleBarInsets();
+
         // Subscribe to window events
         SubscribeWindowEvents();
 
@@ -351,6 +355,46 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
             Saucer.saucer_webview_set_dev_tools(_webview, 1);
             Saucer.saucer_webview_set_context_menu(_webview, 1);
         }
+    }
+
+    private void InjectTitleBarInsets()
+    {
+        double left = 0, top = 0;
+
+        if (OperatingSystem.IsMacOS())
+        {
+            (left, top) = GetMacOsInsets();
+        }
+
+        if (left > 0 || top > 0)
+        {
+            var leftPx = left.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            var topPx = top.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            var css = $"document.documentElement.style.setProperty('--ryn-titlebar-inset-left','{leftPx}px');" +
+                      $"document.documentElement.style.setProperty('--ryn-titlebar-inset-top','{topPx}px');";
+#pragma warning disable CA2012 // Inject is synchronous, returns completed ValueTask
+            _rynWebView!.InjectScriptAsync(css);
+#pragma warning restore CA2012
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("macos")]
+    private (double Left, double Top) GetMacOsInsets()
+    {
+        nuint size;
+        System.Runtime.CompilerServices.Unsafe.SkipInit(out size);
+        Saucer.saucer_window_native(_window, 0, null, &size);
+        if (size == 0 || size > 64) return (70, 28);
+
+        Span<byte> buf = stackalloc byte[(int)size];
+        fixed (byte* ptr = buf)
+        {
+            Saucer.saucer_window_native(_window, 0, ptr, &size);
+            var nsWindow = System.Runtime.InteropServices.MemoryMarshal.Read<nint>(buf);
+            if (nsWindow != 0)
+                return MacOsTitleBar.GetTrafficLightInsets(nsWindow);
+        }
+        return (70, 28);
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("macos")]

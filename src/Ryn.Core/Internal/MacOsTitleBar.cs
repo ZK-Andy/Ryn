@@ -99,6 +99,32 @@ internal static partial class MacOsTitleBar
         }
     }
 
+    internal static unsafe (double Left, double Top) GetTrafficLightInsets(nint nsWindowPtr)
+    {
+        if (nsWindowPtr == 0) return (0, 0);
+
+        var nsWindow = (void*)nsWindowPtr;
+
+        // NSWindowButton: Close=0, Miniaturize=1, Zoom=2
+        // Get the zoom (rightmost) button to find the right edge
+        var zoomButton = (void*)objc_msgSend_nint_ret_nint(nsWindow, sel_registerName("standardWindowButton:"), 2);
+        if ((nint)zoomButton == 0) return (70, 28);
+
+        var buttonFrame = objc_msgSend_rect(zoomButton, sel_registerName("frame"));
+
+        // The superview (title bar view) has the buttons positioned relative to it
+        var superview = (void*)objc_msgSend_ret_nint(zoomButton, sel_registerName("superview"));
+        if ((nint)superview == 0) return (70, 28);
+
+        var superFrame = objc_msgSend_rect(superview, sel_registerName("frame"));
+
+        // Right edge of zoom button + padding
+        var left = buttonFrame.X + buttonFrame.Width + 12;
+        var top = superFrame.Height;
+
+        return (left, top);
+    }
+
     // --- ObjC Runtime P/Invoke ---
 
     [LibraryImport("libobjc.dylib")]
@@ -137,6 +163,10 @@ internal static partial class MacOsTitleBar
     [LibraryImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static unsafe partial nint objc_msgSend_ret_nint(void* receiver, nint selector);
+
+    [LibraryImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static unsafe partial nint objc_msgSend_nint_ret_nint(void* receiver, nint selector, nint arg);
 
     [LibraryImport("libobjc.dylib", EntryPoint = "objc_msgSend")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
