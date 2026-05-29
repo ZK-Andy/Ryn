@@ -30,13 +30,15 @@ internal sealed class UpdaterCommands
         if (update is null)
             throw new InvalidOperationException("No update available.");
 
-        var path = await _service.DownloadUpdateAsync(update).ConfigureAwait(false);
-        return path;
+        // Returns an opaque, server-side handle to the downloaded-and-verified artifact — NOT a path.
+        // The frontend cannot influence which file gets applied.
+        var handle = await _service.DownloadUpdateAsync(update).ConfigureAwait(false);
+        return handle;
     }
 
     [RynCommand("updater.apply")]
-    public async ValueTask ApplyAsync(string downloadPath)
+    public async ValueTask ApplyAsync(string downloadHandle)
     {
-        await _service.ApplyUpdateAsync(downloadPath).ConfigureAwait(false);
+        await _service.ApplyUpdateAsync(downloadHandle).ConfigureAwait(false);
     }
 }
