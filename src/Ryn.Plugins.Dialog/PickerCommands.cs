@@ -1,6 +1,5 @@
+using System.Diagnostics;
 using System.Text;
-using Ryn.Core.Internal;
-using Ryn.Interop;
 using Ryn.Ipc;
 
 namespace Ryn.Plugins.Dialog;
@@ -9,200 +8,244 @@ namespace Ryn.Plugins.Dialog;
 internal sealed class PickerCommands
 #pragma warning restore CA1812
 {
-    private const int BufferSize = 4096;
-
-    private readonly NativeApplicationAccessor _accessor;
-
-    public PickerCommands(NativeApplicationAccessor accessor)
-    {
-        _accessor = accessor;
-    }
-
     [RynCommand("dialog.openFile")]
-    public unsafe string OpenFile(string initialPath)
+    public static string OpenFile(string initialPath)
     {
-        var appPtr = (saucer_application*)_accessor.ApplicationHandle;
-        if (appPtr == null)
-            return string.Empty;
+        if (OperatingSystem.IsMacOS())
+            return RunOsascript($"POSIX path of (choose file default location \"{EscapeAppleScript(initialPath)}\")");
 
-        var desktop = Saucer.saucer_desktop_new(appPtr);
-        if (desktop == null)
-            return string.Empty;
+        if (OperatingSystem.IsWindows())
+            return RunWindowsDialog("OpenFileDialog", initialPath, "FileName");
 
-        try
-        {
-            var options = Saucer.saucer_picker_options_new();
-            try
-            {
-                SetInitialPath(options, initialPath);
+        if (OperatingSystem.IsLinux())
+            return RunLinuxPicker("--file-selection", initialPath);
 
-                var buffer = stackalloc sbyte[BufferSize];
-                nuint size = (nuint)BufferSize;
-                int error;
-                Saucer.saucer_picker_pick_file(desktop, options, buffer, &size, &error);
-
-                return ReadResult(buffer, size, error);
-            }
-            finally
-            {
-                Saucer.saucer_picker_options_free(options);
-            }
-        }
-        finally
-        {
-            Saucer.saucer_desktop_free(desktop);
-        }
+        return string.Empty;
     }
 
     [RynCommand("dialog.openFolder")]
-    public unsafe string OpenFolder(string initialPath)
+    public static string OpenFolder(string initialPath)
     {
-        var appPtr = (saucer_application*)_accessor.ApplicationHandle;
-        if (appPtr == null)
-            return string.Empty;
+        if (OperatingSystem.IsMacOS())
+            return RunOsascript($"POSIX path of (choose folder default location \"{EscapeAppleScript(initialPath)}\")");
 
-        var desktop = Saucer.saucer_desktop_new(appPtr);
-        if (desktop == null)
-            return string.Empty;
+        if (OperatingSystem.IsWindows())
+            return RunWindowsDialog("FolderBrowserDialog", initialPath, "SelectedPath");
 
-        try
-        {
-            var options = Saucer.saucer_picker_options_new();
-            try
-            {
-                SetInitialPath(options, initialPath);
+        if (OperatingSystem.IsLinux())
+            return RunLinuxPicker("--file-selection --directory", initialPath);
 
-                var buffer = stackalloc sbyte[BufferSize];
-                nuint size = (nuint)BufferSize;
-                int error;
-                Saucer.saucer_picker_pick_folder(desktop, options, buffer, &size, &error);
-
-                return ReadResult(buffer, size, error);
-            }
-            finally
-            {
-                Saucer.saucer_picker_options_free(options);
-            }
-        }
-        finally
-        {
-            Saucer.saucer_desktop_free(desktop);
-        }
+        return string.Empty;
     }
 
     [RynCommand("dialog.openFiles")]
-    public unsafe string OpenFiles(string initialPath)
+    public static string OpenFiles(string initialPath)
     {
-        var appPtr = (saucer_application*)_accessor.ApplicationHandle;
-        if (appPtr == null)
-            return "[]";
-
-        var desktop = Saucer.saucer_desktop_new(appPtr);
-        if (desktop == null)
-            return "[]";
-
-        try
+        if (OperatingSystem.IsMacOS())
         {
-            var options = Saucer.saucer_picker_options_new();
-            try
-            {
-                SetInitialPath(options, initialPath);
-
-                var buffer = stackalloc sbyte[BufferSize];
-                nuint size = (nuint)BufferSize;
-                int error;
-                Saucer.saucer_picker_pick_files(desktop, options, buffer, &size, &error);
-
-                if (error != 0 || size == 0)
-                    return "[]";
-
-                int len = 0;
-                while (len < (int)size && buffer[len] != 0) len++;
-                if (len == 0) return "[]";
-
-                var raw = Utf8String.ToManaged(buffer, len);
-                var paths = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-
-                var sb = new StringBuilder("[");
-                for (var i = 0; i < paths.Length; i++)
-                {
-                    if (i > 0) sb.Append(',');
-                    sb.Append('"');
-                    sb.Append(paths[i]
-                        .Replace("\\", "\\\\", StringComparison.Ordinal)
-                        .Replace("\"", "\\\"", StringComparison.Ordinal));
-                    sb.Append('"');
-                }
-                sb.Append(']');
-                return sb.ToString();
-            }
-            finally
-            {
-                Saucer.saucer_picker_options_free(options);
-            }
+            var script = "set paths to {}\n" +
+                         $"set chosen to (choose file default location \"{EscapeAppleScript(initialPath)}\" with multiple selections allowed)\n" +
+                         "repeat with f in chosen\nset end of paths to POSIX path of f\nend repeat\n" +
+                         "set text item delimiters to \"\\n\"\npaths as text";
+            var result = RunOsascript(script);
+            return PathsToJsonArray(result);
         }
-        finally
+
+        if (OperatingSystem.IsWindows())
         {
-            Saucer.saucer_desktop_free(desktop);
+            var script = "Add-Type -AssemblyName System.Windows.Forms; " +
+                         "$dlg = New-Object System.Windows.Forms.OpenFileDialog; " +
+                         "$dlg.Multiselect = $true; " +
+                         (string.IsNullOrEmpty(initialPath) ? "" : $"$dlg.InitialDirectory = '{EscapePowerShell(initialPath)}'; ") +
+                         "if ($dlg.ShowDialog() -eq 'OK') { $dlg.FileNames -join \"`n\" }";
+            var result = RunPowerShell(script);
+            return PathsToJsonArray(result);
         }
+
+        if (OperatingSystem.IsLinux())
+        {
+            var result = RunLinuxPicker("--file-selection --multiple", initialPath);
+            return PathsToJsonArray(result);
+        }
+
+        return "[]";
     }
 
     [RynCommand("dialog.save")]
-    public unsafe string Save(string initialPath)
+    public static string Save(string initialPath)
     {
-        var appPtr = (saucer_application*)_accessor.ApplicationHandle;
-        if (appPtr == null)
-            return string.Empty;
+        if (OperatingSystem.IsMacOS())
+            return RunOsascript($"POSIX path of (choose file name default location \"{EscapeAppleScript(initialPath)}\")");
 
-        var desktop = Saucer.saucer_desktop_new(appPtr);
-        if (desktop == null)
-            return string.Empty;
+        if (OperatingSystem.IsWindows())
+            return RunWindowsDialog("SaveFileDialog", initialPath, "FileName");
+
+        if (OperatingSystem.IsLinux())
+            return RunLinuxPicker("--file-selection --save", initialPath);
+
+        return string.Empty;
+    }
+
+    private static string RunOsascript(string script)
+    {
+        var psi = new ProcessStartInfo("osascript")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        psi.ArgumentList.Add("-e");
+        psi.ArgumentList.Add(script);
 
         try
         {
-            var options = Saucer.saucer_picker_options_new();
+            using var process = Process.Start(psi);
+            if (process is null) return string.Empty;
+            var output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit();
+            return process.ExitCode == 0 ? output : string.Empty;
+        }
+        catch (InvalidOperationException) { return string.Empty; }
+        catch (System.ComponentModel.Win32Exception) { return string.Empty; }
+    }
+
+    private static string RunWindowsDialog(string dialogType, string initialPath, string resultProp)
+    {
+        var script = $"Add-Type -AssemblyName System.Windows.Forms; " +
+                     $"$dlg = New-Object System.Windows.Forms.{dialogType}; " +
+                     (string.IsNullOrEmpty(initialPath) ? "" : $"$dlg.InitialDirectory = '{EscapePowerShell(initialPath)}'; ") +
+                     $"if ($dlg.ShowDialog() -eq 'OK') {{ $dlg.{resultProp} }}";
+        return RunPowerShell(script);
+    }
+
+    private static string RunPowerShell(string script)
+    {
+        var psi = new ProcessStartInfo("powershell")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        psi.ArgumentList.Add("-NoProfile");
+        psi.ArgumentList.Add("-NonInteractive");
+        psi.ArgumentList.Add("-Command");
+        psi.ArgumentList.Add(script);
+
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process is null) return string.Empty;
+            var output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit();
+            return process.ExitCode == 0 ? output : string.Empty;
+        }
+        catch (InvalidOperationException) { return string.Empty; }
+        catch (System.ComponentModel.Win32Exception) { return string.Empty; }
+    }
+
+    private static string RunLinuxPicker(string flags, string initialPath)
+    {
+        var tool = FindLinuxTool();
+        if (tool is null) return string.Empty;
+
+        var psi = new ProcessStartInfo(tool)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+
+        if (tool == "zenity")
+        {
+            foreach (var flag in flags.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                psi.ArgumentList.Add(flag);
+            psi.ArgumentList.Add("--separator=\n");
+            if (!string.IsNullOrEmpty(initialPath))
+                psi.ArgumentList.Add($"--filename={initialPath}/");
+        }
+        else
+        {
+            var isDir = flags.Contains("directory", StringComparison.Ordinal);
+            var isSave = flags.Contains("save", StringComparison.Ordinal);
+            var isMulti = flags.Contains("multiple", StringComparison.Ordinal);
+
+            if (isDir)
+                psi.ArgumentList.Add("--getexistingdirectory");
+            else if (isSave)
+                psi.ArgumentList.Add("--getsavefilename");
+            else
+                psi.ArgumentList.Add("--getopenfilename");
+
+            psi.ArgumentList.Add(initialPath ?? ".");
+
+            if (isMulti)
+            {
+                psi.ArgumentList.Add("--multiple");
+                psi.ArgumentList.Add("--separate-output");
+            }
+        }
+
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process is null) return string.Empty;
+            var output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit();
+            return process.ExitCode == 0 ? output : string.Empty;
+        }
+        catch (InvalidOperationException) { return string.Empty; }
+        catch (System.ComponentModel.Win32Exception) { return string.Empty; }
+    }
+
+    private static string? FindLinuxTool()
+    {
+        foreach (var tool in new[] { "zenity", "kdialog" })
+        {
+            var psi = new ProcessStartInfo("which")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add(tool);
             try
             {
-                SetInitialPath(options, initialPath);
-
-                var buffer = stackalloc sbyte[BufferSize];
-                nuint size = (nuint)BufferSize;
-                int error;
-                Saucer.saucer_picker_save(desktop, options, buffer, &size, &error);
-
-                return ReadResult(buffer, size, error);
+                using var proc = Process.Start(psi);
+                if (proc is null) continue;
+                proc.WaitForExit();
+                if (proc.ExitCode == 0) return tool;
             }
-            finally
-            {
-                Saucer.saucer_picker_options_free(options);
-            }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
         }
-        finally
+        return null;
+    }
+
+    private static string PathsToJsonArray(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return "[]";
+        var paths = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var sb = new StringBuilder("[");
+        for (var i = 0; i < paths.Length; i++)
         {
-            Saucer.saucer_desktop_free(desktop);
+            if (i > 0) sb.Append(',');
+            sb.Append('"');
+            sb.Append(paths[i]
+                .Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("\"", "\\\"", StringComparison.Ordinal));
+            sb.Append('"');
         }
+        sb.Append(']');
+        return sb.ToString();
     }
 
-    private static unsafe void SetInitialPath(saucer_picker_options* options, string initialPath)
-    {
-        if (string.IsNullOrEmpty(initialPath))
-            return;
+    private static string EscapeAppleScript(string value) =>
+        value.Replace("\\", "\\\\", StringComparison.Ordinal)
+             .Replace("\"", "\\\"", StringComparison.Ordinal);
 
-        Span<byte> pathBuf = stackalloc byte[1024];
-        var pathStr = Utf8String.Create(initialPath, pathBuf);
-        Saucer.saucer_picker_options_set_initial(options, pathStr.Pointer);
-        pathStr.Dispose();
-    }
-
-    private static unsafe string ReadResult(sbyte* buffer, nuint size, int error)
-    {
-        if (error != 0 || size == 0)
-            return string.Empty;
-
-        int len = 0;
-        while (len < (int)size && buffer[len] != 0) len++;
-        if (len == 0) return string.Empty;
-
-        return Utf8String.ToManaged(buffer, len);
-    }
+    private static string EscapePowerShell(string value) =>
+        value.Replace("'", "''", StringComparison.Ordinal);
 }

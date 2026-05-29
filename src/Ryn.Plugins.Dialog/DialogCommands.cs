@@ -20,6 +20,8 @@ public static partial class DialogCommands
     [RynCommand("dialog.message")]
     public static void Message(string title, string message)
     {
+        ArgumentNullException.ThrowIfNull(title);
+        ArgumentNullException.ThrowIfNull(message);
         if (OperatingSystem.IsMacOS())
         {
             Process.Start("osascript", $"-e 'display dialog \"{EscapeAppleScript(message)}\" with title \"{EscapeAppleScript(title)}\" buttons {{\"OK\"}} default button \"OK\"'")?.WaitForExit();
@@ -37,6 +39,8 @@ public static partial class DialogCommands
     [RynCommand("dialog.confirm")]
     public static bool Confirm(string title, string message)
     {
+        ArgumentNullException.ThrowIfNull(title);
+        ArgumentNullException.ThrowIfNull(message);
         if (OperatingSystem.IsMacOS())
         {
             var process = Process.Start(new ProcessStartInfo
