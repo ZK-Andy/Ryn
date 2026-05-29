@@ -1,6 +1,7 @@
 using FluentAssertions;
 using NSubstitute;
 using Ryn.Core;
+using Ryn.Ipc;
 using Ryn.Plugins.Shell;
 using Xunit;
 
@@ -8,6 +9,80 @@ namespace Ryn.Plugins.Tests;
 
 public sealed class ShellCommandsTests
 {
+    [Fact]
+    public void ScopedCommand_PermitsMatchingArgs_RejectsOthers()
+    {
+        // echo is scoped to exactly one literal argument "hello".
+        ShellCommands.Configure(new ShellOptions
+        {
+            CommandScopes = [new CommandScope("echo", [ArgRule.Literal("hello")])],
+        });
+
+        var ok = () => ShellCommands.Execute("echo", "[\"hello\"]");
+        ok.Should().NotThrow();
+
+        var wrongArg = () => ShellCommands.Execute("echo", "[\"goodbye\"]");
+        wrongArg.Should().Throw<UnauthorizedAccessException>();
+
+        var wrongCount = () => ShellCommands.Execute("echo", "[\"hello\", \"world\"]");
+        wrongCount.Should().Throw<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public void ScopedCommand_RegexValidator_Enforced()
+    {
+        ShellCommands.Configure(new ShellOptions
+        {
+            CommandScopes = [new CommandScope("echo", [ArgRule.Pattern("^[a-z]+$")])],
+        });
+
+        ((Action)(() => ShellCommands.Execute("echo", "[\"abc\"]"))).Should().NotThrow();
+        ((Action)(() => ShellCommands.Execute("echo", "[\"abc123\"]"))).Should().Throw<UnauthorizedAccessException>();
+        // injection attempt is just a non-matching argument, passed literally (never to a shell)
+        ((Action)(() => ShellCommands.Execute("echo", "[\"$(rm -rf /)\"]"))).Should().Throw<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public void Execute_FailsClosed_WhenNotConfigured()
+    {
+        // Reset to an unconfigured state via reflection-free path: configure then verify the
+        // dedicated "not configured" guard by clearing through an empty options object is not enough,
+        // so we assert the empty-allowlist guard which is the reachable production state.
+        ShellCommands.Configure(new ShellOptions { AllowedCommands = [] });
+        ((Action)(() => ShellCommands.Execute("echo", "[]"))).Should().Throw<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public void Open_RejectsFileScheme()
+    {
+        ShellCommands.Configure(new ShellOptions());
+        ((Action)(() => ShellCommands.ValidateOpenTarget("file:///etc/passwd"))).Should().Throw<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public void Open_RejectsBarePath()
+    {
+        ShellCommands.Configure(new ShellOptions());
+        ((Action)(() => ShellCommands.ValidateOpenTarget("/Applications/Calculator.app"))).Should().Throw<UnauthorizedAccessException>();
+        ((Action)(() => ShellCommands.ValidateOpenTarget("Calculator.app"))).Should().Throw<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public void Open_AllowsHttpsByDefault()
+    {
+        ShellCommands.Configure(new ShellOptions());
+        ((Action)(() => ShellCommands.ValidateOpenTarget("https://example.com"))).Should().NotThrow();
+        ((Action)(() => ShellCommands.ValidateOpenTarget("mailto:a@b.com"))).Should().NotThrow();
+    }
+
+    [Fact]
+    public void Open_HonorsConfiguredSchemeAllowlist()
+    {
+        ShellCommands.Configure(new ShellOptions { AllowedOpenSchemes = ["https"] });
+        ((Action)(() => ShellCommands.ValidateOpenTarget("https://example.com"))).Should().NotThrow();
+        ((Action)(() => ShellCommands.ValidateOpenTarget("mailto:a@b.com"))).Should().Throw<UnauthorizedAccessException>();
+    }
+
     [Fact]
     public void Execute_DeniedWhenAllowlistEmpty()
     {

@@ -21,26 +21,21 @@ public sealed class PtyCommands : IDisposable
     [RynCommand("shell.pty")]
     public int Pty(string command, string argsJson)
     {
-        var resolvedCommand = ShellCommands.ValidateAndResolveCommand(command);
+        // Route through the same validation choke point as execute/spawn — this also enforces the
+        // argument policy, which the PTY path previously skipped entirely.
+        var parsed = ShellCommands.ParseArgs(argsJson);
+        var resolvedCommand = ShellCommands.ValidateInvocation(command, parsed);
 
         string[] args;
-        if (string.IsNullOrEmpty(argsJson) || argsJson == "{}")
+        if (parsed.Length == 0)
         {
             args = [resolvedCommand];
         }
         else
         {
-            var parsed = JsonSerializer.Deserialize(argsJson, ShellJsonContext.Default.StringArray);
-            if (parsed is null || parsed.Length == 0)
-            {
-                args = [resolvedCommand];
-            }
-            else
-            {
-                args = new string[parsed.Length + 1];
-                args[0] = resolvedCommand;
-                Array.Copy(parsed, 0, args, 1, parsed.Length);
-            }
+            args = new string[parsed.Length + 1];
+            args[0] = resolvedCommand;
+            Array.Copy(parsed, 0, args, 1, parsed.Length);
         }
 
         IPtySession session;

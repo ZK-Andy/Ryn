@@ -13,7 +13,25 @@ internal static class CapabilityScopeMerger
     internal static void MergeShellScope(RynCapabilities capabilities, ShellOptions options)
     {
         var scope = capabilities.GetScope("shell");
-        if (scope is null || !scope.HasCommandPolicy)
+        if (scope is null)
+            return;
+
+        // ryn.json is the deployment ceiling: per-argument command scopes and the open-scheme allowlist
+        // declared there are authoritative.
+        if (scope.CommandScopes is not null)
+        {
+            options.CommandScopes.Clear();
+            options.CommandScopes.AddRange(scope.CommandScopes);
+        }
+
+        if (scope.AllowedSchemes is not null)
+            options.AllowedOpenSchemes = [.. scope.AllowedSchemes];
+
+        if (!scope.HasCommandPolicy)
+            return;
+
+        // The legacy name-only "commands" list (if present) still clamps AllowedCommands.
+        if (scope.AllowedCommands is null)
             return;
 
         // commands: [] means explicit deny-all

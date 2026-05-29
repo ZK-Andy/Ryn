@@ -21,7 +21,8 @@ public sealed class SpawnCommands : IDisposable
     [RynCommand("shell.spawn")]
     public int Spawn(string command, string argsJson)
     {
-        var resolvedCommand = ShellCommands.ValidateAndResolveCommand(command);
+        var args = ShellCommands.ParseArgs(argsJson);
+        var resolvedCommand = ShellCommands.ValidateInvocation(command, args);
 
         var psi = new ProcessStartInfo
         {
@@ -31,7 +32,8 @@ public sealed class SpawnCommands : IDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        ShellCommands.PopulateArguments(psi, argsJson);
+        ShellCommands.PopulateArguments(psi, args);
+        ShellCommands.ApplyProcessPolicy(psi);
 
         var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start process: {command}");

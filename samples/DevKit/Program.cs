@@ -33,11 +33,11 @@ var app = RynApplication.CreateBuilder()
         services.AddRynClipboard();
         services.AddRynShell(shell =>
         {
-            shell.AllowedCommands.AddRange(["echo", "date", "whoami", "uname", "ls", "cat", "pwd", "env"]);
-            if (OperatingSystem.IsWindows())
-                shell.AllowedCommands.AddRange(["cmd.exe", "powershell"]);
-            else
-                shell.AllowedCommands.AddRange(["bash", "sh"]);
+            // Only fixed-output, side-effect-free utilities are allowlisted. We deliberately do NOT
+            // allowlist interpreters (bash/sh/cmd/powershell), `env` (leaks host secrets), or `cat`
+            // (arbitrary file read/exfil): allowlisting any of those turns shell.execute into an
+            // arbitrary-code / arbitrary-read primitive and defeats the sandbox.
+            shell.AllowedCommands.AddRange(["echo", "date", "whoami", "uname", "ls", "pwd"]);
         });
         services.AddRynNotification();
     })

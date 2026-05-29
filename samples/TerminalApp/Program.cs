@@ -18,6 +18,11 @@ var app = RynApplication.CreateBuilder()
     .ConfigureServices(services =>
     {
         services.AddRynCommands();
+        // ⚠️ SECURITY: This sample is a terminal emulator, so running an interactive shell IS its
+        // entire purpose. Allowlisting an interpreter like this is the ONE case where it is intended —
+        // and it means the frontend can run arbitrary commands. NEVER copy this pattern into a normal
+        // app: allowlisting bash/sh/cmd/powershell disables the shell sandbox. For a normal app, use
+        // ShellOptions.CommandScopes (per-argument argv templates) instead of AllowedCommands.
         services.AddRynShell(shell =>
         {
             var defaultShell = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/bash";
