@@ -43,4 +43,12 @@ internal static class DiagnosticDescriptors
         category: "Ryn.Ipc",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor DuplicateCommandNameAcrossClasses = new(
+        id: "RYN006",
+        title: "Duplicate command name across classes",
+        messageFormat: "Command name '{0}' is declared in multiple classes ({1}); only one router will handle it and the others are silently shadowed",
+        category: "Ryn.Ipc",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

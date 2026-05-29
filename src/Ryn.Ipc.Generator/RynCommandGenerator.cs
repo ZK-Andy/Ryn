@@ -56,6 +56,42 @@ public sealed class RynCommandGenerator : IIncrementalGenerator
                 ctx.AddSource($"{group.TypeName}Router.g.cs", source);
             }
         });
+
+        // RYN006: detect the same command name declared across DIFFERENT classes. RYN004 only catches
+        // duplicates within one class; across classes the first-registered router silently shadows the rest.
+        var allCommands = methods.Collect();
+        context.RegisterSourceOutput(allCommands, static (ctx, commands) =>
+        {
+            var byName = new Dictionary<string, List<CommandInfo>>(StringComparer.Ordinal);
+            foreach (var cmd in commands)
+            {
+                if (!byName.TryGetValue(cmd.CommandName, out var list))
+                {
+                    list = new List<CommandInfo>();
+                    byName[cmd.CommandName] = list;
+                }
+                list.Add(cmd);
+            }
+
+            foreach (var kvp in byName)
+            {
+                var distinctTypes = kvp.Value
+                    .Select(c => c.ContainingTypeFullName)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                if (distinctTypes.Count <= 1)
+                    continue;
+
+                foreach (var cmd in kvp.Value)
+                {
+                    ctx.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.DuplicateCommandNameAcrossClasses,
+                        cmd.Location,
+                        kvp.Key,
+                        string.Join(", ", distinctTypes)));
+                }
+            }
+        });
     }
 
     private static CommandInfo? ExtractCommandInfo(
@@ -114,7 +150,8 @@ public sealed class RynCommandGenerator : IIncrementalGenerator
                 isArray,
                 arrayElementSpecialType,
                 isNullable,
-                nullableUnderlyingSpecialType));
+                nullableUnderlyingSpecialType,
+                IsInjectedServiceType(p.Type)));
         }
 
         var returnTypeDisplay = method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -125,18 +162,23 @@ public sealed class RynCommandGenerator : IIncrementalGenerator
 
         if (method.ReturnType is INamedTypeSymbol namedReturn)
         {
-            if (namedReturn.OriginalDefinition.ToDisplayString() == "System.Threading.Tasks.ValueTask<TResult>")
+            var genericDef = namedReturn.OriginalDefinition.ToDisplayString();
+            if (genericDef is "System.Threading.Tasks.ValueTask<TResult>" or "System.Threading.Tasks.Task<TResult>")
             {
                 isAsync = true;
                 innerReturnTypeSymbol = namedReturn.TypeArguments[0];
                 innerReturnType = innerReturnTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 innerSpecialType = innerReturnTypeSymbol.SpecialType;
             }
-            else if (namedReturn.ToDisplayString() == "System.Threading.Tasks.ValueTask")
+            else
             {
-                isAsync = true;
-                innerReturnType = "void";
-                innerSpecialType = SpecialType.System_Void;
+                var nonGeneric = namedReturn.ToDisplayString();
+                if (nonGeneric is "System.Threading.Tasks.ValueTask" or "System.Threading.Tasks.Task")
+                {
+                    isAsync = true;
+                    innerReturnType = "void";
+                    innerSpecialType = SpecialType.System_Void;
+                }
             }
         }
 
@@ -191,11 +233,21 @@ public sealed class RynCommandGenerator : IIncrementalGenerator
             IsReturnNullable: isReturnNullable,
             ReturnNullableUnderlyingSpecialType: returnNullableUnderlyingSpecialType,
             JsonContextTypeFullName: jsonContextTypeFullName,
-            Location: location);
+            Location: new LocationInfo(location));
     }
 
     private static bool IsCancellationToken(ITypeSymbol type) =>
         type.ToDisplayString() == "System.Threading.CancellationToken";
+
+    /// <summary>
+    /// Framework types that are injected from the DI container into a command rather than deserialized
+    /// from the JSON args — Tauri-style ambient context (the window, the webview, the service provider).
+    /// </summary>
+    private static bool IsInjectedServiceType(ITypeSymbol type) =>
+        type.ToDisplayString() is
+            "Ryn.Core.IRynWindow" or
+            "Ryn.Core.IRynWebView" or
+            "System.IServiceProvider";
 
     private static string ToCamelCase(string name)
     {
@@ -229,7 +281,25 @@ internal readonly record struct CommandInfo(
     bool IsReturnNullable,
     SpecialType ReturnNullableUnderlyingSpecialType,
     string? JsonContextTypeFullName,
-    Location Location);
+    LocationInfo Location);
+
+/// <summary>
+/// Wraps a <see cref="Microsoft.CodeAnalysis.Location"/> but is excluded from value equality, so a
+/// trivial edit that only shifts line numbers does not invalidate the incremental generator's cache and
+/// force a re-emit. Implicitly converts back to <see cref="Microsoft.CodeAnalysis.Location"/> for diagnostics.
+/// </summary>
+internal readonly struct LocationInfo : IEquatable<LocationInfo>
+{
+    public LocationInfo(Location location) => Location = location;
+
+    public Location Location { get; }
+
+    public bool Equals(LocationInfo other) => true;            // ignored for caching
+    public override bool Equals(object? obj) => obj is LocationInfo;
+    public override int GetHashCode() => 0;
+
+    public static implicit operator Location(LocationInfo info) => info.Location;
+}
 
 internal readonly record struct ParameterInfo(
     string Name,
@@ -240,7 +310,8 @@ internal readonly record struct ParameterInfo(
     bool IsArray,
     SpecialType ArrayElementSpecialType,
     bool IsNullable,
-    SpecialType NullableUnderlyingSpecialType);
+    SpecialType NullableUnderlyingSpecialType,
+    bool IsInjected);
 
 internal readonly record struct CommandGroup(
     string TypeFullName,

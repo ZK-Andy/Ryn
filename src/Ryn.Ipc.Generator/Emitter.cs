@@ -86,6 +86,10 @@ internal static class Emitter
                         valid = false;
                     }
                 }
+                else if (p.IsInjected)
+                {
+                    // resolved from DI, not from JSON — always valid
+                }
                 else if (!IsParameterTypeSupported(p, hasJsonContext))
                 {
                     ctx.ReportDiagnostic(Diagnostic.Create(
@@ -143,7 +147,15 @@ internal static class Emitter
             SpecialType.System_Single or
             SpecialType.System_Double or
             SpecialType.System_Boolean or
-            SpecialType.System_String;
+            SpecialType.System_String or
+            SpecialType.System_Byte or
+            SpecialType.System_SByte or
+            SpecialType.System_Int16 or
+            SpecialType.System_UInt16 or
+            SpecialType.System_UInt32 or
+            SpecialType.System_UInt64 or
+            SpecialType.System_Decimal or
+            SpecialType.System_Char;
 
     private static void EmitRouter(StringBuilder sb, CommandGroup group)
     {
@@ -205,8 +217,7 @@ internal static class Emitter
         sb.AppendLine($"            case \"{cmd.CommandName}\":");
         sb.AppendLine("            {");
 
-        var jsonParams = cmd.Parameters.Where(p => !p.IsCancellationToken).ToList();
-        var hasCancellation = cmd.Parameters.Any(p => p.IsCancellationToken);
+        var jsonParams = cmd.Parameters.Where(p => !p.IsCancellationToken && !p.IsInjected).ToList();
 
         if (jsonParams.Count > 0)
         {
@@ -222,18 +233,19 @@ internal static class Emitter
         }
 
         var callArgs = new StringBuilder();
-        var paramIndex = 0;
+        var jsonIndex = 0;
         for (var i = 0; i < cmd.Parameters.Length; i++)
         {
             if (i > 0) callArgs.Append(", ");
-            if (cmd.Parameters[i].IsCancellationToken)
-            {
+            var p = cmd.Parameters[i];
+            if (p.IsCancellationToken)
                 callArgs.Append("cancellationToken");
-            }
+            else if (p.IsInjected)
+                callArgs.Append(p.TypeDisplay == "global::System.IServiceProvider"
+                    ? "services"
+                    : $"services.GetRequiredService<{p.TypeDisplay}>()");
             else
-            {
-                callArgs.Append($"__p{paramIndex++}");
-            }
+                callArgs.Append($"__p{jsonIndex++}");
         }
 
         string target;
@@ -321,6 +333,14 @@ internal static class Emitter
         SpecialType.System_Double => ".GetDouble()",
         SpecialType.System_Boolean => ".GetBoolean()",
         SpecialType.System_String => ".GetString()!",
+        SpecialType.System_Byte => ".GetByte()",
+        SpecialType.System_SByte => ".GetSByte()",
+        SpecialType.System_Int16 => ".GetInt16()",
+        SpecialType.System_UInt16 => ".GetUInt16()",
+        SpecialType.System_UInt32 => ".GetUInt32()",
+        SpecialType.System_UInt64 => ".GetUInt64()",
+        SpecialType.System_Decimal => ".GetDecimal()",
+        SpecialType.System_Char => ".GetString()![0]",
         _ => ".GetRawText()",
     };
 
@@ -332,6 +352,14 @@ internal static class Emitter
         SpecialType.System_Double => "double",
         SpecialType.System_Boolean => "bool",
         SpecialType.System_String => "string",
+        SpecialType.System_Byte => "byte",
+        SpecialType.System_SByte => "sbyte",
+        SpecialType.System_Int16 => "short",
+        SpecialType.System_UInt16 => "ushort",
+        SpecialType.System_UInt32 => "uint",
+        SpecialType.System_UInt64 => "ulong",
+        SpecialType.System_Decimal => "decimal",
+        SpecialType.System_Char => "char",
         _ => "object",
     };
 
@@ -379,12 +407,14 @@ internal static class Emitter
 
     private static string GetScalarSerializer(string varName, SpecialType type) => type switch
     {
-        SpecialType.System_Int32 => $"{varName}.ToString(System.Globalization.CultureInfo.InvariantCulture)",
-        SpecialType.System_Int64 => $"{varName}.ToString(System.Globalization.CultureInfo.InvariantCulture)",
-        SpecialType.System_Single => $"{varName}.ToString(System.Globalization.CultureInfo.InvariantCulture)",
-        SpecialType.System_Double => $"{varName}.ToString(System.Globalization.CultureInfo.InvariantCulture)",
+        SpecialType.System_Int32 or SpecialType.System_Int64 or SpecialType.System_Single or
+        SpecialType.System_Double or SpecialType.System_Byte or SpecialType.System_SByte or
+        SpecialType.System_Int16 or SpecialType.System_UInt16 or SpecialType.System_UInt32 or
+        SpecialType.System_UInt64 or SpecialType.System_Decimal =>
+            $"{varName}.ToString(System.Globalization.CultureInfo.InvariantCulture)",
         SpecialType.System_Boolean => $"{varName} ? \"true\" : \"false\"",
         SpecialType.System_String => $"__ToJson({varName})",
+        SpecialType.System_Char => $"__ToJson({varName}.ToString())",
         _ => $"{varName}.ToString()",
     };
 
@@ -398,6 +428,10 @@ internal static class Emitter
         if (elementType == SpecialType.System_String)
         {
             sb.AppendLine("                    __sb.Append(__ToJson(__result[__i]));");
+        }
+        else if (elementType == SpecialType.System_Char)
+        {
+            sb.AppendLine("                    __sb.Append(__ToJson(__result[__i].ToString()));");
         }
         else if (elementType == SpecialType.System_Boolean)
         {
@@ -436,22 +470,63 @@ internal static class Emitter
     }
 
     /// <summary>
-    /// Derives the JsonTypeInfo property name from a fully qualified type display string.
-    /// e.g. "global::TestApp.MyDto" -> "MyDto"
+    /// Derives the source-generated JsonTypeInfo property name from a fully qualified type display string,
+    /// mirroring System.Text.Json's naming so that generics/arrays/nested types produce a VALID identifier
+    /// (the old code turned "List&lt;MyDto&gt;" into "MyDto>", which would not compile).
+    /// Examples: "global::App.MyDto" -> "MyDto", "MyDto[]" -> "MyDtoArray",
+    /// "System.Collections.Generic.List&lt;App.MyDto&gt;" -> "ListMyDto".
     /// </summary>
-    private static string GetTypeInfoPropertyName(string typeDisplay)
+    internal static string GetTypeInfoPropertyName(string typeDisplay)
     {
-        // Strip "global::" prefix if present
-        var name = typeDisplay;
+        // Arrays: STJ names them "<ElementSimpleName>Array".
+        var trimmed = typeDisplay.Trim();
+        if (trimmed.EndsWith("[]", StringComparison.Ordinal))
+            return GetTypeInfoPropertyName(trimmed.Substring(0, trimmed.Length - 2)) + "Array";
+
+        // Generics: build "<OuterSimpleName><Arg1SimpleName><Arg2SimpleName>...".
+        var lt = trimmed.IndexOf('<');
+        if (lt >= 0 && trimmed.EndsWith(">", StringComparison.Ordinal))
+        {
+            var outer = SimpleName(trimmed.Substring(0, lt));
+            var argsText = trimmed.Substring(lt + 1, trimmed.Length - lt - 2);
+            var sb = new StringBuilder(outer);
+            foreach (var arg in SplitGenericArgs(argsText))
+                sb.Append(GetTypeInfoPropertyName(arg));
+            return sb.ToString();
+        }
+
+        return SimpleName(trimmed);
+    }
+
+    private static string SimpleName(string typeDisplay)
+    {
+        var name = typeDisplay.Trim();
         if (name.StartsWith("global::", StringComparison.Ordinal))
             name = name.Substring("global::".Length);
 
-        // Take the last segment after '.'
         var lastDot = name.LastIndexOf('.');
         if (lastDot >= 0)
             name = name.Substring(lastDot + 1);
 
         return name;
+    }
+
+    private static IEnumerable<string> SplitGenericArgs(string argsText)
+    {
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < argsText.Length; i++)
+        {
+            var c = argsText[i];
+            if (c == '<') depth++;
+            else if (c == '>') depth--;
+            else if (c == ',' && depth == 0)
+            {
+                yield return argsText.Substring(start, i - start);
+                start = i + 1;
+            }
+        }
+        yield return argsText.Substring(start);
     }
 
     private static string ToCamelCase(string name)
