@@ -61,6 +61,41 @@ archive_ext() {
     esac
 }
 
+CHECKSUMS_FILE="$SCRIPT_DIR/native-checksums.txt"
+
+compute_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+# Verify a downloaded archive against the pinned SHA-256 in native-checksums.txt before extraction.
+# Mismatch => hard fail (supply-chain protection). Missing entry => loud UNVERIFIED warning.
+verify_checksum() {
+    local file="$1" name="$2"
+    local expected actual
+    expected=$(grep -E "[[:space:]]$name\$" "$CHECKSUMS_FILE" 2>/dev/null | grep -v '^#' | awk '{print $1}' | head -n1 || true)
+
+    if [[ -z "$expected" ]]; then
+        echo "    ⚠️  WARNING: no pinned checksum for $name — artifact is UNVERIFIED. Add it to build/native-checksums.txt."
+        return 0
+    fi
+
+    actual="$(compute_sha256 "$file")"
+    if [[ "$actual" != "$expected" ]]; then
+        echo "    ✖ CHECKSUM MISMATCH for $name"
+        echo "        expected: $expected"
+        echo "        actual:   $actual"
+        echo "    Refusing to use a tampered or corrupt artifact."
+        return 1
+    fi
+
+    echo "    ✓ checksum verified ($expected)"
+    return 0
+}
+
 download_rid() {
     local rid="$1"
     local ext dest archive_name
@@ -106,6 +141,11 @@ sys.exit(1)
     local tmp_file="/tmp/$archive_name"
     if ! curl -sS -L -H "$auth_hdr" -H "Accept: application/octet-stream" -o "$tmp_file" "$asset_url"; then
         echo "    Download failed."
+        return 1
+    fi
+
+    if ! verify_checksum "$tmp_file" "$archive_name"; then
+        rm -f "$tmp_file"
         return 1
     fi
 

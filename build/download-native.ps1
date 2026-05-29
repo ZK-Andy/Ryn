@@ -50,6 +50,39 @@ function Get-ArchiveExt($rid) {
     if ($rid -like "win-*") { return ".zip" } else { return ".tar.gz" }
 }
 
+# Verify a downloaded archive against the pinned SHA-256 in native-checksums.txt before extraction.
+# Mismatch => hard fail. Missing entry => loud UNVERIFIED warning.
+function Test-Checksum($file, $name) {
+    $checksumsFile = Join-Path $PSScriptRoot "native-checksums.txt"
+    $expected = $null
+    if (Test-Path $checksumsFile) {
+        foreach ($line in Get-Content $checksumsFile) {
+            if ($line -match '^\s*#') { continue }
+            if ($line -match "([0-9a-fA-F]{64})\s+$([regex]::Escape($name))\s*$") {
+                $expected = $Matches[1].ToLowerInvariant()
+                break
+            }
+        }
+    }
+
+    if (-not $expected) {
+        Write-Host "    WARNING: no pinned checksum for $name -- artifact is UNVERIFIED. Add it to build/native-checksums.txt."
+        return $true
+    }
+
+    $actual = (Get-FileHash -Path $file -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $expected) {
+        Write-Host "    CHECKSUM MISMATCH for $name"
+        Write-Host "        expected: $expected"
+        Write-Host "        actual:   $actual"
+        Write-Host "    Refusing to use a tampered or corrupt artifact."
+        return $false
+    }
+
+    Write-Host "    checksum verified ($expected)"
+    return $true
+}
+
 function Download-Rid($rid) {
     $ext = Get-ArchiveExt $rid
     $archiveName = "saucer-bindings-${rid}${ext}"
@@ -103,6 +136,11 @@ function Download-Rid($rid) {
     }
     catch {
         Write-Host "    Download failed: $_"
+        return $false
+    }
+
+    if (-not (Test-Checksum $tempFile $archiveName)) {
+        Remove-Item -Path $tempFile -ErrorAction SilentlyContinue
         return $false
     }
 

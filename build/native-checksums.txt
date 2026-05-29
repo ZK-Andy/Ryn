@@ -1,0 +1,13 @@
+# Pinned SHA-256 checksums for prebuilt saucer-bindings native archives.
+#
+# Format (one per line):   <sha256-hex>  <archive-file-name>
+# Example:
+#   3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b  saucer-bindings-osx-arm64.tar.gz
+#
+# download-native.sh / download-native.ps1 verify every downloaded archive against the entry here
+# BEFORE extracting it. A mismatch aborts the download (supply-chain protection). If an archive has no
+# entry yet, the scripts print a loud "UNVERIFIED" warning rather than silently trusting it.
+#
+# To (re)generate after publishing a release:
+#   shasum -a 256 saucer-bindings-*.tar.gz saucer-bindings-*.zip
+# and paste the lines below.

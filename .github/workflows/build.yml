@@ -46,7 +46,6 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Download native libraries
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -61,9 +60,19 @@ jobs:
             fi
             echo "Native libraries downloaded successfully"
           else
-            echo "No prebuilt native libraries available — integration tests will be skipped"
+            echo "::error::No prebuilt native libraries available for ${{ matrix.rid }}. Integration tests cannot run; failing the job rather than silently skipping. Publish the saucer-bindings artifact or run native-libs.yml first."
+            exit 1
           fi
         shell: bash
+
+      - name: Verify native libraries present
+        shell: bash
+        run: |
+          DEST="src/Ryn.Interop/runtimes/${{ matrix.rid }}/native"
+          if [ -z "$(ls -A "$DEST" 2>/dev/null)" ]; then
+            echo "::error::Native library directory $DEST is empty."
+            exit 1
+          fi
 
       - name: Build
         run: dotnet build -c ${{ matrix.configuration }}
@@ -72,7 +81,6 @@ jobs:
         run: dotnet test --no-build -c ${{ matrix.configuration }} --filter "Category!=Integration&Category!=Package" --logger "trx;LogFileName=results.trx"
 
       - name: Copy native libs to test output
-        if: hashFiles(format('src/Ryn.Interop/runtimes/{0}/native/*', matrix.rid)) != ''
         shell: bash
         run: |
           SRC="src/Ryn.Interop/runtimes/${{ matrix.rid }}/native"
@@ -80,8 +88,9 @@ jobs:
           mkdir -p "$DEST"
           cp "$SRC"/* "$DEST/"
 
+      # Always runs — native libs are guaranteed present by the verify step above, so a missing-lib
+      # situation fails the job loudly instead of silently skipping integration coverage.
       - name: Integration test
-        if: hashFiles(format('src/Ryn.Interop/runtimes/{0}/native/*', matrix.rid)) != ''
         run: dotnet test --no-build -c ${{ matrix.configuration }} --filter "Category=Integration" --logger "trx;LogFileName=integration-results.trx"
 
       - name: Upload test results
