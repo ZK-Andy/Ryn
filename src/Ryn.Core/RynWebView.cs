@@ -7,7 +7,7 @@ using Ryn.Interop;
 
 namespace Ryn.Core;
 
-public sealed class RynWebView : IRynWebView, IDisposable
+public sealed class RynWebView : IRynWebView, Internal.ILocalServerHost, IDisposable
 {
     private const string AppScheme = "ryn";
 
@@ -20,7 +20,7 @@ public sealed class RynWebView : IRynWebView, IDisposable
     /// </summary>
     private readonly string _ipcToken = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
 
-    internal string IpcToken => _ipcToken;
+    string Internal.ILocalServerHost.IpcToken => _ipcToken;
 
     /// <summary>
     /// Builds the JS bridge. Command results are returned inline on the IPC response body (the XHR
@@ -181,10 +181,10 @@ public sealed class RynWebView : IRynWebView, IDisposable
 
     internal void SetCommandHandler(CommandDispatchHandler handler) => _commandHandler = handler;
 
-    internal Task<(bool Ok, string Data)> DispatchCommandFromServerAsync(string command, string body)
+    Task<(bool Ok, string Data)> Internal.ILocalServerHost.DispatchCommandFromServerAsync(string command, string body)
         => ExecuteCommandAsync(command, Encoding.UTF8.GetBytes(body));
 
-    internal void HandleEvalFromServer(long evalId, int ok, string body)
+    void Internal.ILocalServerHost.HandleEvalFromServer(long evalId, int ok, string body)
     {
         if (_pendingEvals.TryRemove(evalId, out var tcs))
         {

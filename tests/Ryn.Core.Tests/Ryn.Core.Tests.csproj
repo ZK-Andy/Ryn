@@ -5,6 +5,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsAotCompatible>false</IsAotCompatible>
     <IsTrimmable>false</IsTrimmable>
+    <NoWarn>$(NoWarn);CA2007;CA2234;CA1001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

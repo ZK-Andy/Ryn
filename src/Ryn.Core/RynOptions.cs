@@ -36,8 +36,18 @@ public sealed class RynOptions
     /// <summary>Whether to serve content through a local HTTP server instead of the custom scheme.</summary>
     public bool UseLocalServer { get; set; }
 
-    /// <summary>Whether the local server should use HTTPS. Only applies when <see cref="UseLocalServer"/> is true.</summary>
+    /// <summary>
+    /// Deprecated: the local server is plain HTTP on loopback (which is already a browser "secure context",
+    /// so crypto/clipboard APIs work). Kept for source compatibility; setting it has no effect.
+    /// </summary>
     public bool UseHttps { get; set; }
+
+    /// <summary>
+    /// Fixed loopback port for the local content/IPC server (<see cref="UseLocalServer"/>). A stable port
+    /// means a stable <c>http://localhost:{port}</c> origin you can whitelist in your API's CORS config.
+    /// Falls back to nearby ports, then an OS-assigned port, if taken. Default 7421.
+    /// </summary>
+    public int LocalServerPort { get; set; } = 7421;
 
     /// <summary>Path to the window icon file.</summary>
     public string? IconPath { get; set; }

@@ -284,7 +284,7 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
                 // relative /ipc POST would hit the dev server (404) and IPC would silently break. Start an
                 // IPC-only Ryn server and point the bridge at it (absolute URL) with CORS for the dev origin.
                 var devOrigin = url.GetLeftPart(UriPartial.Authority);
-                _localServer = new LocalWebServer(contentDirectory: null, useHttps: false, allowedCorsOrigin: devOrigin);
+                _localServer = new LocalWebServer(contentDirectory: null, _options.LocalServerPort, allowedCorsOrigin: devOrigin);
                 _localServer.StartAsync().GetAwaiter().GetResult();
                 _localServer.SetWebView(_rynWebView);
                 var ipcBase = _localServer.Url.TrimEnd('/');
@@ -306,7 +306,7 @@ public sealed unsafe class RynWindow : IRynWindow, IDisposable
         }
         else if (_options.UseLocalServer && _options.ContentDirectory != null)
         {
-            _localServer = new LocalWebServer(_options.ContentDirectory, _options.UseHttps);
+            _localServer = new LocalWebServer(_options.ContentDirectory, _options.LocalServerPort);
             _localServer.StartAsync().GetAwaiter().GetResult();
             _localServer.SetWebView(_rynWebView);
             var serverUrl = _localServer.Url;

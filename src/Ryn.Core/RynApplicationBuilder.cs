@@ -164,6 +164,7 @@ public sealed class RynApplicationBuilder
         target.ContentDirectory = source.ContentDirectory;
         target.UseLocalServer = source.UseLocalServer;
         target.UseHttps = source.UseHttps;
+        target.LocalServerPort = source.LocalServerPort;
         target.IconPath = source.IconPath;
         target.DevTools = source.DevTools;
         target.UseEmbeddedContent = source.UseEmbeddedContent;
