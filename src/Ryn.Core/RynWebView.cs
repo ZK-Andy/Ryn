@@ -107,6 +107,9 @@ public sealed class RynWebView : IRynWebView, Internal.ILocalServerHost, IDispos
     private static ReadOnlySpan<byte> ConsoleForwardScript =>
         """
         (function(){
+          // Only operate in the top frame. Never patch console / forward to IPC inside a cross-origin
+          // iframe (e.g. a captcha widget), where the relative IPC POST would hit the wrong origin.
+          if (window.top !== window.self) return;
           var c = window.console;
           var orig = { log: c.log, warn: c.warn, error: c.error, info: c.info };
           function fmt(args) {
@@ -353,7 +356,7 @@ public sealed class RynWebView : IRynWebView, Internal.ILocalServerHost, IDispos
             (saucer_webview*)_webview,
             str.Pointer,
             saucer_script_time.SAUCER_SCRIPT_TIME_CREATION,
-            0,
+            1, // no_frames: main frame only — never inject the Ryn bridge into cross-origin iframes (e.g. captcha widgets)
             0);
         str.Dispose();
     }
@@ -384,7 +387,7 @@ public sealed class RynWebView : IRynWebView, Internal.ILocalServerHost, IDispos
             (saucer_webview*)_webview,
             str.Pointer,
             saucer_script_time.SAUCER_SCRIPT_TIME_CREATION,
-            0,
+            1, // no_frames: main frame only — never inject the Ryn bridge into cross-origin iframes (e.g. captcha widgets)
             0);
         str.Dispose();
     }
@@ -397,7 +400,7 @@ public sealed class RynWebView : IRynWebView, Internal.ILocalServerHost, IDispos
                 (saucer_webview*)_webview,
                 (sbyte*)ptr,
                 saucer_script_time.SAUCER_SCRIPT_TIME_CREATION,
-                0,
+                1, // no_frames: main frame only — keep framework scripts out of cross-origin iframes
                 0);
         }
     }
@@ -410,7 +413,7 @@ public sealed class RynWebView : IRynWebView, Internal.ILocalServerHost, IDispos
                 (saucer_webview*)_webview,
                 (sbyte*)ptr,
                 saucer_script_time.SAUCER_SCRIPT_TIME_CREATION,
-                0,
+                1, // no_frames: main frame only — keep framework scripts out of cross-origin iframes
                 0);
         }
     }
