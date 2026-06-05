@@ -2,7 +2,6 @@
   <PropertyGroup>
     <PackageType>Template</PackageType>
     <PackageId>Ryn.Templates</PackageId>
-    <PackageVersion>0.1.0</PackageVersion>
     <Title>Ryn Application Templates</Title>
     <Description>Templates for creating Ryn desktop applications</Description>
     <IncludeContentInPack>true</IncludeContentInPack>
