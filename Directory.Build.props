@@ -15,16 +15,21 @@
     <IsTrimmable>true</IsTrimmable>
 
     <!-- Package metadata -->
-    <Authors>Ryn Contributors</Authors>
-    <Company>Ryn</Company>
+    <Authors>Moh</Authors>
+    <Company>Yupmoh</Company>
     <Product>Ryn</Product>
-    <Copyright>Copyright (c) 2026 Ryn Contributors</Copyright>
+    <Copyright>Copyright (c) 2026 Moh</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/user/Ryn</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/user/Ryn</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Yupmoh/Ryn</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Yupmoh/Ryn</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <!-- Pack the repository README into every NuGet package so PackageReadmeFile resolves (NU5039). -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="" Visible="false" />
+  </ItemGroup>
 
   <PropertyGroup>
     <!-- Central versioning -->
