@@ -1,11 +1,16 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Ryn.Cli;
 
 /// <summary>
-/// Locates the <c>dotnet</c> executable, even when it is not on <c>PATH</c>.
-/// Resolution order: <c>DOTNET_HOST_PATH</c>, <c>PATH</c>, the <c>DOTNET_ROOT</c> family,
-/// then well-known per-platform install locations. The result is cached for the process lifetime.
+/// Locates a working <c>dotnet</c> executable, even when it is not on <c>PATH</c>.
+/// Candidates are tried in order — <c>DOTNET_HOST_PATH</c>, <c>PATH</c>, the <c>DOTNET_ROOT</c>
+/// family, then well-known per-platform install locations — and each is validated (it must be a
+/// real executable file, and it must actually run <c>--version</c>) so broken entries such as a
+/// dangling <c>/usr/local/bin/dotnet</c> symlink are skipped rather than returned. The result is
+/// cached for the process lifetime.
 /// </summary>
 internal static class DotnetResolver
 {
@@ -15,7 +20,7 @@ internal static class DotnetResolver
     private static string ExeName => OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
 
     /// <summary>
-    /// Returns the full path to the dotnet executable, or <see langword="null"/> if it cannot be found.
+    /// Returns the full path to a usable dotnet executable, or <see langword="null"/> if none can be found.
     /// </summary>
     internal static string? Resolve()
     {
@@ -36,7 +41,7 @@ internal static class DotnetResolver
         var path = Resolve();
         if (path is null)
         {
-            Console.Error.WriteLine("Error: could not find the 'dotnet' executable.");
+            Console.Error.WriteLine("Error: could not find a working 'dotnet' executable.");
             Console.Error.WriteLine();
             Console.Error.WriteLine("Ryn needs the .NET SDK to build your project. Either:");
             Console.Error.WriteLine("  - Install the .NET 10 SDK: https://dotnet.microsoft.com/download");
@@ -51,36 +56,66 @@ internal static class DotnetResolver
 
     private static string? ResolveCore()
     {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        // Prefer a candidate that actually runs `--version`. If none verifies (e.g. an SDK is
+        // present but broken), fall back to the first executable so the command that needs dotnet
+        // can surface the real error rather than a misleading "not found".
+        string? firstExecutable = null;
+
+        foreach (var candidate in EnumerateCandidates())
+        {
+            if (!seen.Add(candidate) || !IsExecutableFile(candidate))
+                continue;
+
+            firstExecutable ??= candidate;
+            if (RunsSuccessfully(candidate))
+                return candidate;
+        }
+
+        return firstExecutable;
+    }
+
+    private static IEnumerable<string> EnumerateCandidates()
+    {
         // 1. DOTNET_HOST_PATH — set by the SDK/host; points directly at the dotnet executable.
         var hostPath = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
-        if (IsExecutableFile(hostPath))
-            return hostPath;
+        if (!string.IsNullOrEmpty(hostPath))
+            yield return hostPath;
 
-        // 2. PATH lookup. Resolving to a full path (rather than relying on Process.Start's own
-        //    search) keeps behavior identical across platforms and lets the muxer derive its root.
-        if (FindOnPath(ExeName) is { } onPath)
-            return onPath;
+        // 2. Every PATH entry (a broken match no longer stops the search).
+        foreach (var candidate in PathCandidates())
+            yield return candidate;
 
         // 3. DOTNET_ROOT family — a directory that contains the dotnet executable.
-        foreach (var envVar in (ReadOnlySpan<string>)["DOTNET_ROOT", "DOTNET_ROOT(x86)", "DOTNET_ROOT_X64"])
+        foreach (var envVar in (string[])["DOTNET_ROOT", "DOTNET_ROOT(x86)", "DOTNET_ROOT_X64"])
         {
             var root = Environment.GetEnvironmentVariable(envVar);
             if (string.IsNullOrEmpty(root))
                 continue;
 
-            var candidate = Path.Combine(root, ExeName);
-            if (IsExecutableFile(candidate))
-                return candidate;
+            var candidate = TryCombine(root, ExeName);
+            if (candidate is not null)
+                yield return candidate;
         }
 
         // 4. Well-known install locations.
         foreach (var candidate in WellKnownPaths())
-        {
-            if (IsExecutableFile(candidate))
-                return candidate;
-        }
+            yield return candidate;
+    }
 
-        return null;
+    private static IEnumerable<string> PathCandidates()
+    {
+        var pathEnv = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrEmpty(pathEnv))
+            yield break;
+
+        foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var candidate = TryCombine(dir, ExeName);
+            if (candidate is not null)
+                yield return candidate;
+        }
     }
 
     private static IEnumerable<string> WellKnownPaths()
@@ -116,31 +151,73 @@ internal static class DotnetResolver
         }
     }
 
-    private static string? FindOnPath(string exeName)
+    private static string? TryCombine(string dir, string file)
     {
-        var pathEnv = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrEmpty(pathEnv))
-            return null;
-
-        foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        try
         {
-            string candidate;
-            try
-            {
-                candidate = Path.Combine(dir, exeName);
-            }
-            catch (ArgumentException)
-            {
-                continue; // a PATH entry with invalid path characters
-            }
-
-            if (IsExecutableFile(candidate))
-                return candidate;
+            return Path.Combine(dir, file);
         }
-
-        return null;
+        catch (ArgumentException)
+        {
+            return null; // a directory with invalid path characters
+        }
     }
 
-    private static bool IsExecutableFile([NotNullWhen(true)] string? path) =>
-        !string.IsNullOrEmpty(path) && File.Exists(path);
+    /// <summary>
+    /// True if the path is a real, executable file. Follows symlinks, so a dangling link (whose
+    /// target is missing) is rejected, and on Unix an execute bit is required.
+    /// </summary>
+    private static bool IsExecutableFile([NotNullWhen(true)] string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return false;
+
+        try
+        {
+            if (OperatingSystem.IsWindows())
+                return File.Exists(path);
+
+            // GetUnixFileMode follows symlinks, so a dangling link throws (and is rejected here).
+            var mode = File.GetUnixFileMode(path);
+            const UnixFileMode anyExecute = UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+            return (mode & anyExecute) != 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Runs <c>{dotnet} --version</c> and returns true only if it exits 0.</summary>
+    private static bool RunsSuccessfully(string dotnetPath)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = dotnetPath,
+                Arguments = "--version",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            });
+
+            if (process is null)
+                return false;
+
+            if (!process.WaitForExit(milliseconds: 15_000))
+            {
+                try { process.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) { /* already exited */ }
+                return false;
+            }
+
+            return process.ExitCode == 0;
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or IOException)
+        {
+            return false;
+        }
+    }
 }

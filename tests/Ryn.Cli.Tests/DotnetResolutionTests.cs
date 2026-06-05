@@ -65,6 +65,65 @@ public sealed class DotnetResolutionTests
         stdout.Should().MatchRegex(@"\.NET SDK[^\n]*10\.", because);
     }
 
+    [Fact]
+    public async Task Doctor_SkipsBrokenDotnetSymlink_OnPath()
+    {
+        // Mirrors the real /usr/local/bin/dotnet -> (missing target) dangling symlink: a PATH entry
+        // whose `dotnet` exists as a name but is not runnable must be skipped, not returned.
+        if (OperatingSystem.IsWindows())
+            return; // POSIX symlink semantics; Windows symlink creation needs elevation.
+
+        var dotnetDir = Path.GetDirectoryName(RealDotnetPath())!;
+
+        var brokenDir = Path.Combine(Path.GetTempPath(), "ryn-broken-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(brokenDir);
+        try
+        {
+            File.CreateSymbolicLink(
+                Path.Combine(brokenDir, DotnetExeName),
+                Path.Combine(brokenDir, "missing-target"));
+
+            // PATH = broken dir first, then every real-dotnet dir stripped out. The only working
+            // dotnet is reachable via DOTNET_ROOT, so the resolver must skip the broken link to find it.
+            var sanitized = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(dir => !DirectoryContainsDotnet(dir));
+            var path = string.Join(Path.PathSeparator, new[] { brokenDir }.Concat(sanitized));
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = AppHost.Value,
+                WorkingDirectory = Path.GetTempPath(),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("doctor");
+            psi.Environment["PATH"] = path;
+            psi.Environment.Remove("DOTNET_HOST_PATH");
+            psi.Environment["DOTNET_ROOT"] = dotnetDir;
+
+#pragma warning disable CA2007 // xUnit (xUnit1030) forbids ConfigureAwait(false) in test methods
+            using var process = Process.Start(psi)!;
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+#pragma warning restore CA2007
+
+            var because = $"the resolver must skip the broken symlink and resolve via DOTNET_ROOT.\nstdout:\n{stdout}\nstderr:\n{stderr}";
+
+            stdout.Should().NotContain("'--version' failed", because); // would mean the broken link was returned
+            stdout.Should().MatchRegex(@"\.NET SDK[^\n]*10\.", because);
+        }
+        finally
+        {
+            Directory.Delete(brokenDir, recursive: true);
+        }
+    }
+
     private static bool DirectoryContainsDotnet(string dir)
     {
         try
