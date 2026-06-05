@@ -90,8 +90,11 @@ jobs:
       - name: Build
         run: dotnet build -c Release   # MinVer sets the version from the pushed tag
 
+      # Unit tests only. Integration tests need per-OS native libs and a copy step (see
+      # build.yml's matrix) — that's the integration gate; the single-runner release job
+      # must not re-run them. Package tests are likewise covered in build.yml.
       - name: Test
-        run: dotnet test -c Release --no-build
+        run: dotnet test -c Release --no-build --filter "Category!=Integration&Category!=Package"
 
       - name: Pack
         run: dotnet pack -c Release --no-build -o ./nupkg
