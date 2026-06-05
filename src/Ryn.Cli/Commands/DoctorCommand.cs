@@ -68,34 +68,19 @@ internal static class DoctorCommand
 
     private static CheckResult CheckDotNetSdk()
     {
-        var dotnetPath = ResolveDotnet();
+        var dotnetPath = DotnetResolver.Resolve();
+        if (dotnetPath is null)
+            return CheckResult.Fail("dotnet not found (checked DOTNET_HOST_PATH, PATH, DOTNET_ROOT, and standard install locations)");
+
         var version = RunCommand(dotnetPath, "--version");
         if (version is null)
-            return CheckResult.Fail("dotnet not found (checked PATH and standard install locations)");
+            return CheckResult.Fail($"dotnet found at {dotnetPath} but '--version' failed");
 
         version = version.Trim();
         if (version.StartsWith("10.", StringComparison.Ordinal))
             return CheckResult.Ok(version);
 
         return CheckResult.Fail($"found {version}, need 10.x");
-    }
-
-    private static string ResolveDotnet()
-    {
-        if (RunCommand("dotnet", "--version") is not null)
-            return "dotnet";
-
-        string[] wellKnownPaths = OperatingSystem.IsWindows()
-            ? [@"C:\Program Files\dotnet\dotnet.exe", @"C:\Program Files (x86)\dotnet\dotnet.exe"]
-            : ["/usr/local/share/dotnet/dotnet", "/usr/share/dotnet/dotnet", "/opt/homebrew/bin/dotnet"];
-
-        foreach (var path in wellKnownPaths)
-        {
-            if (File.Exists(path))
-                return path;
-        }
-
-        return "dotnet";
     }
 
     private static CheckResult CheckNativeLibs()
@@ -211,10 +196,14 @@ internal static class DoctorCommand
         if (slnx is null)
             return CheckResult.Fail("cannot locate Ryn.slnx");
 
+        var dotnet = DotnetResolver.Resolve();
+        if (dotnet is null)
+            return CheckResult.Fail("dotnet not found");
+
         Console.WriteLine();
         Console.WriteLine("  Running dotnet build (this may take a moment)...");
 
-        var exitCode = RunCommandPassthrough("dotnet", $"build \"{slnx}\" --nologo -v quiet");
+        var exitCode = RunCommandPassthrough(dotnet, $"build \"{slnx}\" --nologo -v quiet");
         if (exitCode == 0)
             return CheckResult.Ok("solution builds successfully");
 

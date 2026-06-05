@@ -8,6 +8,7 @@ internal static class DevCommand
     private static readonly object _lock = new();
     private static DateTime _lastCsChange = DateTime.MinValue;
     private static DateTime _lastFrontendChange = DateTime.MinValue;
+    private static string _dotnet = "dotnet";
 
     internal static int Execute(ReadOnlySpan<string> args)
     {
@@ -17,6 +18,11 @@ internal static class DevCommand
             Console.Error.WriteLine("No .csproj file found in the current directory.");
             return 1;
         }
+
+        var dotnet = DotnetResolver.ResolveOrReport();
+        if (dotnet is null)
+            return 1;
+        _dotnet = dotnet;
 
         var projectDir = Path.GetDirectoryName(csproj)!;
         var projectName = Path.GetFileNameWithoutExtension(csproj);
@@ -91,7 +97,7 @@ internal static class DevCommand
         Console.WriteLine("  Building...");
         var psi = new ProcessStartInfo
         {
-            FileName = "dotnet",
+            FileName = _dotnet,
             WorkingDirectory = projectDir,
             UseShellExecute = false,
         };

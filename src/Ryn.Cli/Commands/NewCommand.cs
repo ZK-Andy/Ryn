@@ -63,17 +63,53 @@ internal static class NewCommand
         Console.WriteLine("  Created project files");
 
         // Run dotnet restore
+        var dotnet = DotnetResolver.ResolveOrReport();
+        if (dotnet is null)
+        {
+            Console.Error.WriteLine();
+            Console.Error.WriteLine($"  Project files were created in {targetDir}, but packages could not be restored.");
+            Console.Error.WriteLine("  Install the .NET SDK, then run 'dotnet restore' in that directory.");
+            return 1;
+        }
+
         Console.WriteLine("  Restoring packages...");
         var restore = Process.Start(new ProcessStartInfo
         {
-            FileName = "dotnet",
+            FileName = dotnet,
             Arguments = "restore",
             WorkingDirectory = targetDir,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         });
-        restore?.WaitForExit();
+
+        var restoreFailed = restore is null;
+        if (restore is not null)
+        {
+            // Read both streams before waiting so a large restore log can't deadlock the pipe.
+            var stdout = restore.StandardOutput.ReadToEndAsync();
+            var stderr = restore.StandardError.ReadToEndAsync();
+            restore.WaitForExit();
+            restoreFailed = restore.ExitCode != 0;
+
+            if (restoreFailed)
+            {
+                var log = $"{stdout.GetAwaiter().GetResult()}{stderr.GetAwaiter().GetResult()}".Trim();
+                if (log.Length > 0)
+                {
+                    Console.Error.WriteLine();
+                    Console.Error.WriteLine(log);
+                }
+            }
+        }
+
+        if (restoreFailed)
+        {
+            Console.Error.WriteLine();
+            Console.Error.WriteLine($"  Project '{name}' was created, but 'dotnet restore' failed.");
+            Console.Error.WriteLine($"  Fix the error above, then run:  cd {name} && \"{dotnet}\" restore");
+            return 1;
+        }
 
         Console.WriteLine();
         Console.WriteLine($"  Project '{name}' created successfully!");

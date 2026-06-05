@@ -26,12 +26,16 @@ internal static class BundleCommand
             return 1;
         }
 
+        var dotnet = DotnetResolver.ResolveOrReport();
+        if (dotnet is null)
+            return 1;
+
         var publishArgs = BuildPublishArgs(args);
 
         Console.WriteLine($"Building {projectName} for release...");
         var buildProcess = Process.Start(new ProcessStartInfo
         {
-            FileName = "dotnet",
+            FileName = dotnet,
             Arguments = publishArgs,
             WorkingDirectory = projectDir,
             UseShellExecute = false,

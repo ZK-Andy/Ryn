@@ -36,6 +36,10 @@ internal static class BuildCommand
             }
         }
 
+        var dotnet = DotnetResolver.ResolveOrReport();
+        if (dotnet is null)
+            return 1;
+
         Console.WriteLine($"Building {projectName} for release...");
 
         var arguments = "publish -c Release --nologo";
@@ -49,7 +53,7 @@ internal static class BuildCommand
 
         var process = Process.Start(new ProcessStartInfo
         {
-            FileName = "dotnet",
+            FileName = dotnet,
             Arguments = arguments,
             WorkingDirectory = projectDir,
             UseShellExecute = false,
