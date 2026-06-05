@@ -45,8 +45,10 @@ public sealed class MyPluginPlugin(MyPluginOptions options) : IRynPlugin
 
     public ValueTask InitializeAsync(CancellationToken cancellationToken = default)
     {
-        // Configure static state, validate options, load resources
-        MyPluginCommands.Configure(options);
+        // One-time startup work: validate options, load native resources, register native libs, etc.
+        // Keep configuration on the injected options instance rather than process-global static state,
+        // so two windows/hosts in one process can run with independent policies.
+        _ = options;
         return ValueTask.CompletedTask;
     }
 }
@@ -54,26 +56,24 @@ public sealed class MyPluginPlugin(MyPluginOptions options) : IRynPlugin
 
 ## 3. Define Commands
 
-Commands are methods marked with `[RynCommand]`. They can be static or instance.
+Commands are methods marked with `[RynCommand]`. They can be static or instance — prefer an instance class so options and services arrive through DI (a per-application instance) instead of process-global static state.
 
 ```csharp
 using Ryn.Ipc;
 
 namespace Ryn.Plugins.MyPlugin;
 
-public static class MyPluginCommands
+public sealed class MyPluginCommands(MyPluginOptions options)
 {
-    private static MyPluginOptions? _options;
-
-    internal static void Configure(MyPluginOptions options) => _options = options;
-
     [RynCommand("myPlugin.greet")]
-    public static string Greet(string name) => $"Hello from MyPlugin, {name}!";
+    public string Greet(string name) => $"Hello from MyPlugin, {name}!";
 
     [RynCommand("myPlugin.getConfig")]
-    public static string GetConfig() => _options?.SomeValue ?? "default";
+    public string GetConfig() => options.SomeValue;
 }
 ```
+
+The source generator registers the instance command class as a singleton and resolves it (with `MyPluginOptions` injected) per application, so multi-window/multi-host apps never share one global config.
 
 ### Supported parameter and return types
 
@@ -84,9 +84,9 @@ public static class MyPluginCommands
 - **Complex types**: via `[RynJsonContext]` with a user-supplied `JsonSerializerContext`
 - **Async**: return `ValueTask<T>` with optional `CancellationToken` as the last parameter
 
-### Instance methods with DI
+### Injecting framework services
 
-If your commands need injected services (like `IRynWebView`), use instance methods:
+Inject framework services like `IRynWebView` through the constructor the same way:
 
 ```csharp
 public sealed class MyPluginCommands

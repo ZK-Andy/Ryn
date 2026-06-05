@@ -9,7 +9,7 @@
   <strong>Rich Yet Native</strong> — a cross-platform, lightweight .NET framework for building desktop applications with web UIs.
 </p>
 
-Ryn gives .NET developers the Tauri experience without leaving C#. Native OS webviews, HTML/JS or Blazor frontends, NativeAOT-ready, source-generated IPC.
+Ryn gives .NET developers the Tauri experience without leaving C#. Native OS webviews, HTML/CSS/JS frontends, NativeAOT-ready, source-generated IPC.
 
 ## Why Ryn?
 
@@ -17,8 +17,9 @@ Ryn gives .NET developers the Tauri experience without leaving C#. Native OS web
 - **Lightweight** — Uses native OS webviews (WebView2, WKWebView, WebKitGTK), not bundled Chromium
 - **NativeAOT** — Small, fast, self-contained binaries (~4.3MB) with no runtime dependency
 - **Cross-platform** — Windows, macOS, Linux
-- **Plugin system** — FileSystem, Dialog (native pickers), Clipboard, Shell (spawn/PTY streaming), Notification
+- **Plugin system** — FileSystem, Dialog (native pickers), Clipboard, Shell (spawn/PTY streaming), Notification, Audio, Tray, signed Auto-updater
 - **Security model** — Unified `ryn.json` capability scopes with deny-all semantics
+- **Branded by default** — every window (and bundled `.app`/installer) ships with the Ryn icon out of the box, overridable per app
 
 ## Status
 
@@ -37,6 +38,7 @@ Legend: ✅ verified on a real app · 🟡 implemented, not yet GUI-verified · 
 | Clipboard (text) | ✅ | ✅ | 🟡 (X11 via xclip, Wayland via wl-clipboard) |
 | Clipboard (image) | ✅ | ✅ | 🟡 |
 | Notifications | ✅ | ✅ | 🟡 (notify-send) |
+| Audio playback | 🟡 | 🟡 | 🟡 |
 | Shell / PTY | ✅ | ✅ | 🟡 |
 | Tray icon | ✅ | ✅ | 🟡 (menu-only; no icon-click event) |
 | Auto-updater (signed) | ✅ | ✅ | 🟡 |
@@ -64,6 +66,7 @@ dotnet add package Ryn.Plugins.Dialog
 dotnet add package Ryn.Plugins.Clipboard
 dotnet add package Ryn.Plugins.Shell
 dotnet add package Ryn.Plugins.Notification
+dotnet add package Ryn.Plugins.Audio
 dotnet add package Ryn.Plugins.Tray
 dotnet add package Ryn.Plugins.Updater
 ```
@@ -230,14 +233,16 @@ dotnet run --project src/Ryn.Cli -- bundle
 Options:
 - `--aot` — Enable NativeAOT publishing
 - `--self-contained` — Include .NET runtime
-- `--icon path/to/icon.icns` — Set app icon (macOS)
+- `--icon path/to/icon.png` — Override the app icon (a PNG is auto-converted to `.icns` on macOS / `.ico` on Windows; an `.icns`/`.ico` is used as-is)
 - `--sign "Developer ID"` — Code sign (macOS)
 - `--notarize` — Submit for Apple notarization (macOS)
 - `--version 1.0.0` — Set bundle version
 
+When no icon is supplied (via `--icon` or `ryn.json` → `bundle.icon`), the bundle is branded with the Ryn default icon: a real dock icon (`AppIcon.icns`) on macOS, an `.ico` on Windows, and a hicolor PNG on Linux.
+
 Output:
-- **macOS**: `.app` bundle with Info.plist
-- **Windows**: Self-contained folder with executable
+- **macOS**: `.app` bundle with Info.plist and `AppIcon.icns`
+- **Windows**: Self-contained folder with executable + WiX `.wxs`
 - **Linux**: AppDir structure (use [appimagetool](https://appimage.github.io/) to create an AppImage)
 
 ## Sample Apps
@@ -261,7 +266,7 @@ src/
   Ryn.Core             — Window management, app lifecycle, configuration, events
   Ryn.Interop          — Auto-generated saucer C bindings via ClangSharp
   Ryn.Ipc              — JS <> C# IPC bridge, source generator, capabilities, observability
-  Ryn.Plugins.*        — FileSystem, Dialog, Clipboard, Shell, Notification, Tray, Updater
+  Ryn.Plugins.*        — FileSystem, Dialog, Clipboard, Shell, Notification, Audio, Tray, Updater
   Ryn.Cli              — CLI: new, dev, build, bundle, doctor
 samples/               — 8 example applications
 templates/             — dotnet new template pack

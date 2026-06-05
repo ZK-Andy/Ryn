@@ -7,7 +7,7 @@ Technical reference for the internal architecture of Ryn. Covers the layer stack
 ```
 +--------------------------------------------------+
 |                User Application                   |
-|           (Blazor / HTML+CSS / JS)                |
+|                 (HTML / CSS / JS)                 |
 +-------------------+------------------------------+
 | Ryn.Ipc           | Ryn.Plugins.*                |
 | Source-generated   | FileSystem, Dialog,          |

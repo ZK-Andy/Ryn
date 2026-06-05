@@ -412,11 +412,13 @@ This builds a release and creates a platform-appropriate distributable:
 ```bash
 ryn bundle --aot                      # NativeAOT publish
 ryn bundle --self-contained           # Include .NET runtime
-ryn bundle --icon path/to/icon.icns   # Set app icon (macOS)
+ryn bundle --icon path/to/icon.png    # Override the app icon (PNG auto-converted to .icns/.ico)
 ryn bundle --sign "Developer ID"      # Code sign (macOS)
 ryn bundle --notarize                 # Submit for Apple notarization (macOS)
 ryn bundle --version 1.0.0            # Set bundle version
 ```
+
+If you don't pass `--icon` (or set `bundle.icon` in `ryn.json`), the bundle is branded with the Ryn default icon — a real `AppIcon.icns` on macOS, an `.ico` on Windows, and a hicolor PNG on Linux. At runtime every window also uses the Ryn icon by default; override it with `RynOptions.IconPath`.
 
 You can also configure bundle metadata in `ryn.json`:
 
@@ -426,7 +428,7 @@ You can also configure bundle metadata in `ryn.json`:
   "bundle": {
     "identifier": "com.example.myapp",
     "version": "1.0.0",
-    "icon": "assets/icon.icns"
+    "icon": "assets/icon.png"
   }
 }
 ```
