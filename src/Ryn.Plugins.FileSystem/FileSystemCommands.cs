@@ -5,26 +5,34 @@ using Ryn.Ipc;
 
 namespace Ryn.Plugins.FileSystem;
 
-public static class FileSystemCommands
+public sealed class FileSystemCommands
 {
-    [RynCommand("fs.readTextFile")]
-    public static string ReadTextFile(string path)
+    private readonly PathValidator _validator;
+
+    public FileSystemCommands(PathValidator validator)
     {
-        var resolved = PathValidator.ResolveForRead(path);
+        ArgumentNullException.ThrowIfNull(validator);
+        _validator = validator;
+    }
+
+    [RynCommand("fs.readTextFile")]
+    public string ReadTextFile(string path)
+    {
+        var resolved = _validator.ResolveForRead(path);
         return File.ReadAllText(resolved);
     }
 
     [RynCommand("fs.readFile")]
-    public static string ReadFile(string path)
+    public string ReadFile(string path)
     {
-        var resolved = PathValidator.ResolveForRead(path);
+        var resolved = _validator.ResolveForRead(path);
         return Convert.ToBase64String(File.ReadAllBytes(resolved));
     }
 
     [RynCommand("fs.writeFile")]
-    public static string WriteFile(string path, string data)
+    public string WriteFile(string path, string data)
     {
-        var resolved = PathValidator.Resolve(path);
+        var resolved = _validator.Resolve(path);
         var dir = Path.GetDirectoryName(resolved);
         if (dir is not null) Directory.CreateDirectory(dir);
         File.WriteAllBytes(resolved, Convert.FromBase64String(data));
@@ -32,32 +40,32 @@ public static class FileSystemCommands
     }
 
     [RynCommand("fs.writeTextFile")]
-    public static void WriteTextFile(string path, string text)
+    public void WriteTextFile(string path, string text)
     {
-        var resolved = PathValidator.Resolve(path);
+        var resolved = _validator.Resolve(path);
         var dir = Path.GetDirectoryName(resolved);
         if (dir is not null) Directory.CreateDirectory(dir);
         File.WriteAllText(resolved, text);
     }
 
     [RynCommand("fs.exists")]
-    public static bool Exists(string path)
+    public bool Exists(string path)
     {
-        var resolved = PathValidator.Resolve(path);
+        var resolved = _validator.Resolve(path);
         return File.Exists(resolved) || Directory.Exists(resolved);
     }
 
     [RynCommand("fs.mkdir")]
-    public static void MkDir(string path)
+    public void MkDir(string path)
     {
-        var resolved = PathValidator.Resolve(path);
+        var resolved = _validator.Resolve(path);
         Directory.CreateDirectory(resolved);
     }
 
     [RynCommand("fs.remove")]
-    public static void Remove(string path)
+    public void Remove(string path)
     {
-        var resolved = PathValidator.Resolve(path);
+        var resolved = _validator.Resolve(path);
         if (File.Exists(resolved))
             File.Delete(resolved);
         else if (Directory.Exists(resolved))
@@ -65,9 +73,9 @@ public static class FileSystemCommands
     }
 
     [RynCommand("fs.readDir")]
-    public static string ReadDir(string path)
+    public string ReadDir(string path)
     {
-        var resolved = PathValidator.Resolve(path);
+        var resolved = _validator.Resolve(path);
         var entries = new List<FileEntry>();
 
         foreach (var entry in new DirectoryInfo(resolved).EnumerateFileSystemInfos())
@@ -84,9 +92,9 @@ public static class FileSystemCommands
     }
 
     [RynCommand("fs.stat")]
-    public static string Stat(string path)
+    public string Stat(string path)
     {
-        var resolved = PathValidator.Resolve(path);
+        var resolved = _validator.Resolve(path);
         var info = new FileInfo(resolved);
         var isDir = Directory.Exists(resolved);
 

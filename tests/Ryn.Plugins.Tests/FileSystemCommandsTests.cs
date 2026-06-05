@@ -7,21 +7,22 @@ namespace Ryn.Plugins.Tests;
 public sealed class FileSystemCommandsTests : IDisposable
 {
     private readonly string _testDir;
+    private readonly FileSystemCommands _fs;
 
     public FileSystemCommandsTests()
     {
         _testDir = Path.Combine(Path.GetTempPath(), $"ryn-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testDir);
-        PathValidator.Configure(new FileSystemOptions { AllowedPaths = [_testDir] });
+        _fs = new FileSystemCommands(new PathValidator(new FileSystemOptions { AllowedPaths = [_testDir] }));
     }
 
     [Fact]
     public void WriteAndReadTextFile_RoundTrips()
     {
         var path = Path.Combine(_testDir, "test.txt");
-        FileSystemCommands.WriteTextFile(path, "hello ryn");
+        _fs.WriteTextFile(path, "hello ryn");
 
-        var content = FileSystemCommands.ReadTextFile(path);
+        var content = _fs.ReadTextFile(path);
         content.Should().Be("hello ryn");
     }
 
@@ -31,20 +32,20 @@ public sealed class FileSystemCommandsTests : IDisposable
         var path = Path.Combine(_testDir, "exists.txt");
         File.WriteAllText(path, "x");
 
-        FileSystemCommands.Exists(path).Should().BeTrue();
+        _fs.Exists(path).Should().BeTrue();
     }
 
     [Fact]
     public void Exists_ReturnsFalseForMissing()
     {
-        FileSystemCommands.Exists(Path.Combine(_testDir, "nope.txt")).Should().BeFalse();
+        _fs.Exists(Path.Combine(_testDir, "nope.txt")).Should().BeFalse();
     }
 
     [Fact]
     public void MkDir_CreatesDirectory()
     {
         var path = Path.Combine(_testDir, "subdir");
-        FileSystemCommands.MkDir(path);
+        _fs.MkDir(path);
 
         Directory.Exists(path).Should().BeTrue();
     }
@@ -55,7 +56,7 @@ public sealed class FileSystemCommandsTests : IDisposable
         var path = Path.Combine(_testDir, "todelete.txt");
         File.WriteAllText(path, "x");
 
-        FileSystemCommands.Remove(path);
+        _fs.Remove(path);
         File.Exists(path).Should().BeFalse();
     }
 
@@ -65,7 +66,7 @@ public sealed class FileSystemCommandsTests : IDisposable
         File.WriteAllText(Path.Combine(_testDir, "a.txt"), "a");
         Directory.CreateDirectory(Path.Combine(_testDir, "sub"));
 
-        var json = FileSystemCommands.ReadDir(_testDir);
+        var json = _fs.ReadDir(_testDir);
         json.Should().Contain("a.txt");
         json.Should().Contain("sub");
     }
@@ -76,7 +77,7 @@ public sealed class FileSystemCommandsTests : IDisposable
         var path = Path.Combine(_testDir, "stat.txt");
         File.WriteAllText(path, "content");
 
-        var json = FileSystemCommands.Stat(path);
+        var json = _fs.Stat(path);
         json.Should().Contain("stat.txt");
         json.Should().Contain("\"isDirectory\":false");
     }
@@ -88,9 +89,9 @@ public sealed class FileSystemCommandsTests : IDisposable
         var bytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(256);
         var base64 = Convert.ToBase64String(bytes);
 
-        FileSystemCommands.WriteFile(path, base64);
+        _fs.WriteFile(path, base64);
 
-        var result = FileSystemCommands.ReadFile(path);
+        var result = _fs.ReadFile(path);
         Convert.FromBase64String(result).Should().Equal(bytes);
     }
 
@@ -100,7 +101,7 @@ public sealed class FileSystemCommandsTests : IDisposable
         var path = Path.Combine(_testDir, "nested", "deep", "file.bin");
         var data = Convert.ToBase64String([0x01, 0x02, 0x03]);
 
-        var resolved = FileSystemCommands.WriteFile(path, data);
+        var resolved = _fs.WriteFile(path, data);
 
         File.Exists(resolved).Should().BeTrue();
         File.ReadAllBytes(resolved).Should().Equal(0x01, 0x02, 0x03);
@@ -109,7 +110,7 @@ public sealed class FileSystemCommandsTests : IDisposable
     [Fact]
     public void PathTraversal_Rejected()
     {
-        var act = () => FileSystemCommands.ReadTextFile(Path.Combine(_testDir, "..", "..", "etc", "passwd"));
+        var act = () => _fs.ReadTextFile(Path.Combine(_testDir, "..", "..", "etc", "passwd"));
         act.Should().Throw<UnauthorizedAccessException>();
     }
 
@@ -136,7 +137,7 @@ public sealed class FileSystemCommandsTests : IDisposable
         try
         {
             // Lexically the link is in-scope; its real target is not. Must be rejected.
-            var act = () => FileSystemCommands.ReadTextFile(link);
+            var act = () => _fs.ReadTextFile(link);
             act.Should().Throw<UnauthorizedAccessException>();
         }
         finally
@@ -165,7 +166,7 @@ public sealed class FileSystemCommandsTests : IDisposable
         try
         {
             // Writing to a not-yet-existing file under a symlinked-out parent must be rejected.
-            var act = () => FileSystemCommands.WriteTextFile(Path.Combine(linkedDir, "planted.txt"), "x");
+            var act = () => _fs.WriteTextFile(Path.Combine(linkedDir, "planted.txt"), "x");
             act.Should().Throw<UnauthorizedAccessException>();
             File.Exists(Path.Combine(outsideDir, "planted.txt")).Should().BeFalse();
         }
@@ -178,19 +179,15 @@ public sealed class FileSystemCommandsTests : IDisposable
     [Fact]
     public void ReadFile_ExceedingSizeLimit_Rejected()
     {
-        PathValidator.Configure(new FileSystemOptions { AllowedPaths = [_testDir], MaxReadBytes = 16 });
-        try
-        {
-            var path = Path.Combine(_testDir, "big.bin");
-            File.WriteAllBytes(path, new byte[64]);
+        // A separate command instance with its own policy — no global state to reset afterwards.
+        var limited = new FileSystemCommands(
+            new PathValidator(new FileSystemOptions { AllowedPaths = [_testDir], MaxReadBytes = 16 }));
 
-            var act = () => FileSystemCommands.ReadFile(path);
-            act.Should().Throw<UnauthorizedAccessException>().WithMessage("*read limit*");
-        }
-        finally
-        {
-            PathValidator.Configure(new FileSystemOptions { AllowedPaths = [_testDir] });
-        }
+        var path = Path.Combine(_testDir, "big.bin");
+        File.WriteAllBytes(path, new byte[64]);
+
+        var act = () => limited.ReadFile(path);
+        act.Should().Throw<UnauthorizedAccessException>().WithMessage("*read limit*");
     }
 
     public void Dispose()

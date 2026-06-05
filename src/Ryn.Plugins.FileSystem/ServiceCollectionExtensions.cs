@@ -17,6 +17,9 @@ public static class FileSystemServiceCollectionExtensions
                 CapabilityScopeMerger.MergeFileSystemScope(caps, options);
             return options;
         });
+        // Per-application validator (and, transitively, the command instance the generated router resolves):
+        // each app's DI container holds its own, so multiple apps in one process don't share one global policy.
+        services.AddSingleton<PathValidator>();
         services.AddSingleton<FileSystemPlugin>();
         services.AddSingleton<IRynPlugin>(sp => sp.GetRequiredService<FileSystemPlugin>());
         services.AddFileSystemCommands(); // generated

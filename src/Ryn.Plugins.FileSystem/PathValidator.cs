@@ -2,9 +2,16 @@ using Ryn.Ipc;
 
 namespace Ryn.Plugins.FileSystem;
 
-internal static class PathValidator
+/// <summary>
+/// Validates and canonicalizes filesystem paths against a single application's <see cref="FileSystemOptions"/>.
+/// Resolved from DI as a per-application singleton rather than process-global static state, so two windows
+/// or hosts in the same process can run with different filesystem policies without clobbering each other.
+/// The path-canonicalization helpers are stateless and remain <c>static</c> (also used by
+/// <see cref="CapabilityScopeMerger"/>).
+/// </summary>
+public sealed class PathValidator
 {
-    private static FileSystemOptions? _options;
+    private readonly FileSystemOptions _options;
 
     // Match the host filesystem's case semantics. Linux is case-sensitive; using a
     // case-insensitive compare there would be *over-permissive* (treat /Allowed and /allowed as the
@@ -15,16 +22,20 @@ internal static class PathValidator
 
     private static readonly bool IgnoreCase = !OperatingSystem.IsLinux();
 
-    internal static void Configure(FileSystemOptions options) => _options = options;
+    public PathValidator(FileSystemOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options;
+    }
 
     /// <summary>
     /// Resolves a path for reading and enforces the configured maximum read size, so a hostile
     /// in-scope target cannot OOM the process. Returns the canonical path to read.
     /// </summary>
-    internal static string ResolveForRead(string path)
+    internal string ResolveForRead(string path)
     {
         var resolved = Resolve(path);
-        var max = _options?.MaxReadBytes ?? 0;
+        var max = _options.MaxReadBytes;
         if (max > 0)
         {
             var info = new FileInfo(resolved);
@@ -41,12 +52,11 @@ internal static class PathValidator
     /// parent directories and not-yet-existing write targets — so a link whose lexical path is in
     /// scope but whose real target escapes is rejected.
     /// </summary>
-    internal static string Resolve(string path)
+    internal string Resolve(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
 
-        var options = _options;
-        if (options is not null && options.AccessDenied)
+        if (_options.AccessDenied)
             throw new UnauthorizedAccessException("File system access is denied by capability policy");
 
         // Canonical real path (resolves '..' AND symlinks). This is the value we both authorize and
@@ -56,7 +66,7 @@ internal static class PathValidator
                 ? path
                 : Path.Combine(AppContext.BaseDirectory, path));
 
-        if (options is null || options.AllowedPaths.Count == 0)
+        if (_options.AllowedPaths.Count == 0)
         {
             // Default: restrict to the app directory (also canonicalized so macOS /var->/private etc. match).
             if (!IsWithin(canonical, Canonicalize(AppContext.BaseDirectory)))
@@ -64,7 +74,7 @@ internal static class PathValidator
             return canonical;
         }
 
-        foreach (var allowed in options.AllowedPaths)
+        foreach (var allowed in _options.AllowedPaths)
         {
             if (GlobMatcher.IsGlob(allowed))
             {
