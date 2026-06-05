@@ -250,14 +250,16 @@ public sealed class UpdaterService : IDisposable
     {
         var backupPath = $"{currentExePath}.bak";
 
-        // Constant batch body using positional parameters (%1=current, %2=download, %3=backup).
+        // Constant batch body using positional parameters (%1=current, %2=download, %3=backup). Each is
+        // wrapped as "%~N" — %~N strips any quotes the arg already carries, and the surrounding quotes are
+        // re-added explicitly, so paths containing spaces (e.g. "C:\Program Files\App") survive intact.
         const string batchScript =
             "@echo off\r\n" +
             "timeout /t 2 /nobreak >nul\r\n" +
-            "move /y %1 %3\r\n" +
-            "move /y %2 %1\r\n" +
-            "start \"\" %1\r\n" +
-            "del %3\r\n" +
+            "move /y \"%~1\" \"%~3\"\r\n" +
+            "move /y \"%~2\" \"%~1\"\r\n" +
+            "start \"\" \"%~1\"\r\n" +
+            "del \"%~3\"\r\n" +
             "del \"%~f0\"\r\n";
 
         var batchPath = Path.Combine(Path.GetTempPath(), $"ryn_update_{Guid.NewGuid():N}.bat");
