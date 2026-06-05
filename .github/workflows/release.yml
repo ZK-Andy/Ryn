@@ -250,3 +250,50 @@ jobs:
           files: |
             ./Ryn-*-dlls.zip
             ./cli-bin/ryn-*
+
+  # Unlist the internal "plumbing" packages so only Ryn + plugins + CLI + Templates are visible on
+  # nuget.org. The Ryn metapackage still restores them by exact version (unlist is not delete).
+  # Runs as its own job AFTER publishing so it never delays or risks the release. Best-effort:
+  # needs a nuget.org API key with the "Unlist package" scope as the NUGET_API_KEY secret, and is
+  # skipped (and the job stays green) if that secret is absent.
+  unlist-plumbing:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Unlist plumbing packages
+        shell: bash
+        env:
+          NUGET_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set +e
+          if [ -z "$NUGET_KEY" ]; then
+            echo "NUGET_API_KEY secret not set — skipping unlist."
+            echo "To enable: create a nuget.org API key with the 'Unlist package' scope (glob Ryn.*),"
+            echo "then add it as the NUGET_API_KEY repository secret."
+            exit 0
+          fi
+          VERSION="${GITHUB_REF_NAME#v}"
+          for pkg in Ryn.Core Ryn.Ipc Ryn.Interop Ryn.Ipc.Generator; do
+            lc=$(echo "$pkg" | tr '[:upper:]' '[:lower:]')
+            # A freshly pushed package can't be unlisted until NuGet validates it — wait for it to
+            # appear in the flat-container index (they validate roughly in parallel, so only the
+            # first wait is long).
+            echo "Waiting for $pkg $VERSION to finish validating on NuGet..."
+            for i in $(seq 1 20); do
+              if curl -sf "https://api.nuget.org/v3-flatcontainer/$lc/index.json" | grep -q "\"$VERSION\""; then
+                echo "  $pkg $VERSION is live"; break
+              fi
+              sleep 30
+            done
+            if dotnet nuget delete "$pkg" "$VERSION" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_KEY" --non-interactive; then
+              echo "Unlisted $pkg $VERSION"
+            else
+              echo "Could not unlist $pkg $VERSION automatically — unlist it manually if needed."
+            fi
+          done
+          exit 0
