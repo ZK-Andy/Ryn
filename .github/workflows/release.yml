@@ -1,4 +1,6 @@
-# Publishes all packages to NuGet.org when a version tag (v*) is pushed.
+# On a version tag (v*): publishes all packages to NuGet.org, and creates a GitHub release
+# carrying the framework DLLs (managed assemblies + native libs) and the standalone ryn CLI
+# binaries per platform — NOT the .nupkgs (those live on nuget.org).
 # Versions come from the tag via MinVer (e.g. tag v0.1.0-alpha.2 -> 0.1.0-alpha.2).
 #
 # One-time setup (no API-key secret needed — uses NuGet trusted publishing / OIDC):
@@ -20,7 +22,59 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
 
 jobs:
+  # Build the standalone `ryn` CLI as a self-contained NativeAOT binary per platform.
+  # NativeAOT can't cross-compile, so each RID builds on its own OS.
+  build-cli:
+    name: build-cli (${{ matrix.rid }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            rid: osx-arm64
+            binary: Ryn.Cli
+            asset: ryn-osx-arm64
+          - os: ubuntu-latest
+            rid: linux-x64
+            binary: Ryn.Cli
+            asset: ryn-linux-x64
+          - os: windows-latest
+            rid: win-x64
+            binary: Ryn.Cli.exe
+            asset: ryn-win-x64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0   # MinVer needs full history + tags for the version
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install AOT prerequisites (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish the ryn CLI (NativeAOT, self-contained)
+        run: dotnet publish src/Ryn.Cli/Ryn.Cli.csproj -c Release -r ${{ matrix.rid }} --self-contained
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p cli-out
+          cp "src/Ryn.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/${{ matrix.binary }}" "cli-out/${{ matrix.asset }}"
+
+      - name: Upload CLI binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}
+          path: cli-out/${{ matrix.asset }}
+
   release:
+    needs: build-cli
     runs-on: ubuntu-latest
 
     permissions:
@@ -159,10 +213,33 @@ jobs:
       - name: Push to NuGet
         run: dotnet nuget push "./nupkg/*.nupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
+      # The GitHub release carries the DLLs + the CLI (NOT the .nupkgs — those go to nuget.org).
+      - name: Assemble framework DLLs
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          mkdir -p stage/lib
+          # Ryn's own managed assemblies (Core, Ipc, Interop, the generator, plugins) — not the CLI.
+          find src -path '*/bin/Release/*' -name 'Ryn.*.dll' ! -name 'Ryn.Cli.dll' -exec cp -n {} stage/lib/ \;
+          # Native webview libraries per RID (downloaded earlier into Ryn.Interop/runtimes).
+          cp -R src/Ryn.Interop/runtimes stage/runtimes
+          echo "Bundled DLLs:"; ls stage/lib
+          (cd stage && zip -r "../Ryn-${VER}-dlls.zip" .)
+
+      - name: Download CLI binaries
+        uses: actions/download-artifact@v8
+        with:
+          path: ./cli-bin
+          pattern: ryn-*
+          merge-multiple: true
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           # A tag with a prerelease suffix (e.g. v0.1.0-alpha.1) marks the release as a prerelease.
           prerelease: ${{ contains(github.ref_name, '-') }}
-          files: "./nupkg/*.nupkg"
+          # DLLs (managed assemblies + native libs) and the standalone CLI binaries. No .nupkgs.
+          files: |
+            ./Ryn-*-dlls.zip
+            ./cli-bin/ryn-*
