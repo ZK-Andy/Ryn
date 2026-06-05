@@ -31,6 +31,7 @@ jobs:
             lib-prefix: lib
             lib-ext: .dylib
             archive-ext: .tar.gz
+            rpath: "@loader_path"
 
           - os: ubuntu-latest
             backend: WebKitGtk
@@ -40,6 +41,7 @@ jobs:
             lib-ext: .so
             archive-ext: .tar.gz
             container: archlinux:base-devel
+            rpath: "$ORIGIN"
 
           - os: windows-latest
             backend: WebView2
@@ -48,6 +50,7 @@ jobs:
             lib-prefix: ""
             lib-ext: .dll
             archive-ext: .zip
+            rpath: ""
 
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container || '' }}
@@ -66,6 +69,11 @@ jobs:
         if: matrix.rid == 'linux-x64'
         run: pacman --noconfirm -Syu cmake gcc ninja gtk4 libadwaita webkitgtk-6.0
 
+      # Note: no CMAKE_*_OUTPUT_DIRECTORY override — in the Linux container job that path
+      # (${{ github.workspace }}) resolves to the host mount, not the in-container workdir, so
+      # the Collect step couldn't find the libs. Default build-tree locations under build/native
+      # are searched by Collect on every platform. CMAKE_INSTALL_RPATH makes each library find
+      # its co-located siblings at runtime ($ORIGIN / @loader_path) instead of the build path.
       - name: Configure
         run: >
           cmake -S vendor/saucer-bindings -B build/native
@@ -73,8 +81,8 @@ jobs:
           -Dsaucer_backend=${{ matrix.backend }}
           -Dsaucer_bindings_modules="${{ env.SAUCER_MODULES }}"
           -Dsaucer_bindings_inline_modules="${{ env.SAUCER_INLINE_MODULES }}"
-          -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="${{ github.workspace }}/native-out"
-          -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="${{ github.workspace }}/native-out"
+          -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
+          -DCMAKE_INSTALL_RPATH='${{ matrix.rpath }}'
           ${{ matrix.cmake-args }}
 
       - name: Build
@@ -88,7 +96,8 @@ jobs:
           [ -d native-out ] && SEARCH_DIRS="native-out"
           [ -d build/native ] && SEARCH_DIRS="$SEARCH_DIRS build/native"
           find $SEARCH_DIRS -maxdepth 5 \
-            \( -name "${{ matrix.lib-prefix }}saucer-bindings${{ matrix.lib-ext }}" \
+            \( -name "${{ matrix.lib-prefix }}saucer${{ matrix.lib-ext }}" \
+            -o -name "${{ matrix.lib-prefix }}saucer-bindings${{ matrix.lib-ext }}" \
             -o -name "${{ matrix.lib-prefix }}saucer-bindings-desktop${{ matrix.lib-ext }}" \) \
             -exec cp {} staging/ \;
           echo "Collected:"
