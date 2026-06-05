@@ -11,11 +11,14 @@ namespace Ryn.Plugins.Shell;
 public sealed class PtyCommands : IDisposable
 {
     private readonly IRynWebView _webView;
+    private readonly ShellExecutionPolicy _policy;
     private readonly ConcurrentDictionary<int, IPtySession> _sessions = new();
 
-    public PtyCommands(IRynWebView webView)
+    public PtyCommands(IRynWebView webView, ShellExecutionPolicy policy)
     {
+        ArgumentNullException.ThrowIfNull(policy);
         _webView = webView;
+        _policy = policy;
     }
 
     [RynCommand("shell.pty")]
@@ -23,8 +26,8 @@ public sealed class PtyCommands : IDisposable
     {
         // Route through the same validation choke point as execute/spawn — this also enforces the
         // argument policy, which the PTY path previously skipped entirely.
-        var parsed = ShellCommands.ParseArgs(argsJson);
-        var resolvedCommand = ShellCommands.ValidateInvocation(command, parsed);
+        var parsed = ShellExecutionPolicy.ParseArgs(argsJson);
+        var resolvedCommand = _policy.ValidateInvocation(command, parsed);
 
         string[] args;
         if (parsed.Length == 0)

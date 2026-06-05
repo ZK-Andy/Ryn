@@ -5,18 +5,22 @@ namespace Ryn.Plugins.Shell;
 
 public sealed class ShellPlugin : IRynPlugin
 {
-    private readonly ShellOptions _options;
+    private readonly ShellExecutionPolicy _policy;
 
-    public ShellPlugin(ShellOptions options)
+    public ShellPlugin(ShellExecutionPolicy policy)
     {
-        _options = options;
+        ArgumentNullException.ThrowIfNull(policy);
+        _policy = policy;
     }
 
     public string Name => "Shell";
 
     public ValueTask InitializeAsync(CancellationToken cancellationToken = default)
     {
-        ShellCommands.Configure(_options);
+        // Touch the policy so it (and therefore ShellOptions, with its ryn.json capability merge) is
+        // resolved at startup rather than lazily on the first shell command. Configuration now lives on this
+        // per-application instance instead of the former process-global ShellCommands static.
+        _ = _policy;
         NativeLibraryResolver.RegisterForAssembly(typeof(ShellPlugin).Assembly);
         return ValueTask.CompletedTask;
     }

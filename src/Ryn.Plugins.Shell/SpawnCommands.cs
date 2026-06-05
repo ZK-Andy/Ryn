@@ -11,18 +11,21 @@ namespace Ryn.Plugins.Shell;
 public sealed class SpawnCommands : IDisposable
 {
     private readonly IRynWebView _webView;
+    private readonly ShellExecutionPolicy _policy;
     private readonly ConcurrentDictionary<int, SpawnedProcess> _processes = new();
 
-    public SpawnCommands(IRynWebView webView)
+    public SpawnCommands(IRynWebView webView, ShellExecutionPolicy policy)
     {
+        ArgumentNullException.ThrowIfNull(policy);
         _webView = webView;
+        _policy = policy;
     }
 
     [RynCommand("shell.spawn")]
     public int Spawn(string command, string argsJson)
     {
-        var args = ShellCommands.ParseArgs(argsJson);
-        var resolvedCommand = ShellCommands.ValidateInvocation(command, args);
+        var args = ShellExecutionPolicy.ParseArgs(argsJson);
+        var resolvedCommand = _policy.ValidateInvocation(command, args);
 
         var psi = new ProcessStartInfo
         {
@@ -32,8 +35,8 @@ public sealed class SpawnCommands : IDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        ShellCommands.PopulateArguments(psi, args);
-        ShellCommands.ApplyProcessPolicy(psi);
+        ShellExecutionPolicy.PopulateArguments(psi, args);
+        _policy.ApplyProcessPolicy(psi);
 
         var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start process: {command}");

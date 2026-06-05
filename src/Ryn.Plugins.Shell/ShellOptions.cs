@@ -43,4 +43,19 @@ public sealed class ShellOptions
     /// </summary>
     public List<string> ScrubEnvironmentVariables { get; set; } =
         ["TOKEN", "SECRET", "PASSWORD", "PASSWD", "APIKEY", "API_KEY", "PRIVATE_KEY", "AWS_", "AZURE_", "GCP_", "SESSION"];
+
+    /// <summary>
+    /// Maximum wall-clock time <c>shell.execute</c> waits for a command before killing its process tree and
+    /// throwing. Prevents a hung or runaway child from blocking the IPC dispatch forever. A non-positive value
+    /// disables the timeout (wait indefinitely). Default: 30 seconds.
+    /// </summary>
+    public TimeSpan ExecuteTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Per-stream cap (in characters) on the stdout/stderr that <c>shell.execute</c> buffers. Output is
+    /// streamed and bounded to this size — the rest is drained and discarded (flagged via <c>truncated</c> on
+    /// the result) so a chatty command cannot exhaust memory. A non-positive value disables the cap (unbounded,
+    /// the previous behavior). Default: 1,048,576 characters (~1 MiB).
+    /// </summary>
+    public int MaxExecuteOutputChars { get; set; } = 1024 * 1024;
 }

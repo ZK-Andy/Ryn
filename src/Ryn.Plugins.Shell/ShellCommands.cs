@@ -1,36 +1,25 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Ryn.Ipc;
 
 namespace Ryn.Plugins.Shell;
 
-public static class ShellCommands
+public sealed class ShellCommands
 {
-    private static ShellOptions? _options;
+    private readonly ShellExecutionPolicy _policy;
 
-    internal static ShellOptions? Options => _options;
-
-    private static readonly string[] DefaultOpenSchemes = ["http", "https", "mailto"];
-
-    private static readonly StringComparer CommandNameComparer =
-        OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
-
-    internal static void Configure(ShellOptions options)
+    public ShellCommands(ShellExecutionPolicy policy)
     {
-        _options = options;
-        // Resolve both legacy allow-list names AND the names of per-argument command scopes, so a
-        // scoped command is launchable but still argument-checked.
-        var names = new List<string>(options.AllowedCommands);
-        foreach (var scope in options.CommandScopes)
-            names.Add(scope.Name);
-        (_resolvedBareCommands, _allowedFullPaths) = ResolveAllowlist(names);
+        ArgumentNullException.ThrowIfNull(policy);
+        _policy = policy;
     }
 
     [RynCommand("shell.execute")]
-    public static string Execute(string command, string argsJson)
+    public string Execute(string command, string argsJson)
     {
-        var args = ParseArgs(argsJson);
-        var resolvedCommand = ValidateInvocation(command, args);
+        var args = ShellExecutionPolicy.ParseArgs(argsJson);
+        var resolvedCommand = _policy.ValidateInvocation(command, args);
 
         var psi = new ProcessStartInfo
         {
@@ -41,25 +30,49 @@ public static class ShellCommands
             CreateNoWindow = true,
         };
         foreach (var arg in args) psi.ArgumentList.Add(arg);
-        ApplyProcessPolicy(psi);
+        _policy.ApplyProcessPolicy(psi);
 
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start process: {command}");
 
-        var stderrTask = process.StandardError.ReadToEndAsync();
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = stderrTask.GetAwaiter().GetResult();
-        process.WaitForExit();
+        // Stream both pipes with a per-stream character cap so a chatty child cannot exhaust memory, while
+        // still draining past the cap so it can't deadlock on a full pipe.
+        var maxChars = _policy.MaxExecuteOutputChars;
+        var stdoutTask = ReadBoundedAsync(process.StandardOutput, maxChars);
+        var stderrTask = ReadBoundedAsync(process.StandardError, maxChars);
 
-        var output = new ProcessOutput(stdout, stderr, process.ExitCode);
+        // Bound the wall-clock time; a hung child is killed (whole tree) rather than blocking IPC forever.
+        var timeout = _policy.ExecuteTimeout;
+        var timeoutMs = timeout > TimeSpan.Zero
+            ? (int)Math.Min(timeout.TotalMilliseconds, int.MaxValue)
+            : Timeout.Infinite;
+
+        var exited = process.WaitForExit(timeoutMs);
+        if (!exited)
+        {
+            try { process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { /* already exited */ }
+            catch (System.ComponentModel.Win32Exception) { /* lost the race to kill it */ }
+            process.WaitForExit();
+        }
+
+        // Streams reach EOF once the process (and its tree, on timeout) exits, so the readers complete here.
+        var (stdout, stdoutTruncated) = stdoutTask.GetAwaiter().GetResult();
+        var (stderr, stderrTruncated) = stderrTask.GetAwaiter().GetResult();
+
+        if (!exited)
+            throw new TimeoutException(
+                $"Command '{command}' did not complete within {timeout.TotalSeconds:0}s and was terminated.");
+
+        var output = new ProcessOutput(stdout, stderr, process.ExitCode, stdoutTruncated || stderrTruncated);
         return JsonSerializer.Serialize(output, ShellJsonContext.Default.ProcessOutput);
     }
 
     [RynCommand("shell.open")]
-    public static void Open(string url)
+    public void Open(string url)
     {
         ArgumentNullException.ThrowIfNull(url);
-        ValidateOpenTarget(url);
+        _policy.ValidateOpenTarget(url);
 
         if (OperatingSystem.IsMacOS())
             Process.Start(new ProcessStartInfo { FileName = "open", ArgumentList = { url }, UseShellExecute = false });
@@ -72,248 +85,45 @@ public static class ShellCommands
     }
 
     /// <summary>
-    /// Validates that <paramref name="url"/> is an absolute URL whose scheme is in the allowlist.
-    /// Rejects bare paths, <c>file://</c>, and any scheme not explicitly permitted — this is what stops
-    /// <c>shell.open</c> from launching arbitrary executables, <c>.app</c> bundles, or local files.
+    /// Reads <paramref name="reader"/> to EOF, keeping at most <paramref name="maxChars"/> characters and
+    /// discarding (but still draining) the rest. A non-positive cap means unbounded. Returns the captured
+    /// text and whether any output was dropped.
     /// </summary>
-    internal static void ValidateOpenTarget(string url)
+    private static async Task<(string Text, bool Truncated)> ReadBoundedAsync(StreamReader reader, int maxChars)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            throw new UnauthorizedAccessException($"shell.open target '{url}' is not an absolute URL");
+        var sb = new StringBuilder();
+        var buffer = new char[8192];
+        var truncated = false;
 
-        var allowed = _options?.AllowedOpenSchemes is { Count: > 0 } configured
-            ? configured
-            : (IReadOnlyList<string>)DefaultOpenSchemes;
-
-        var ok = false;
-        foreach (var scheme in allowed)
+        int n;
+        while ((n = await reader.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0)
         {
-            if (string.Equals(uri.Scheme, scheme, StringComparison.OrdinalIgnoreCase))
+            if (maxChars <= 0)
             {
-                ok = true;
-                break;
-            }
-        }
-
-        if (!ok)
-            throw new UnauthorizedAccessException(
-                $"shell.open scheme '{uri.Scheme}' is not permitted (allowed: {string.Join(", ", allowed)})");
-    }
-
-    /// <summary>
-    /// The single choke point through which <c>execute</c>, <c>spawn</c>, and <c>pty</c> all pass.
-    /// Resolves and authorizes the binary, then enforces the argument policy. Returns the resolved path.
-    /// </summary>
-    internal static string ValidateInvocation(string command, string[] args)
-    {
-        var resolved = ValidateAndResolveCommand(command);
-        EnforceArgumentPolicy(command, args);
-        return resolved;
-    }
-
-    internal static string ValidateAndResolveCommand(string command)
-    {
-        ArgumentNullException.ThrowIfNull(command);
-
-        // Fail closed: an unconfigured shell never runs anything. (Previously returned the command
-        // unchecked, which combined with a swallowed plugin-init failure could disable the allowlist.)
-        if (_options is null)
-            throw new UnauthorizedAccessException("Shell execution is not configured (allowlist unavailable)");
-
-        if (_resolvedBareCommands is null || _allowedFullPaths is null)
-            throw new UnauthorizedAccessException("Shell execution is not configured (allowlist unavailable)");
-
-        if (_resolvedBareCommands.Count == 0 && _allowedFullPaths.Count == 0)
-            throw new UnauthorizedAccessException("Shell execution is disabled (no commands in allowlist)");
-
-        var hasPathSeparator = command.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            || command.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
-
-        if (hasPathSeparator)
-        {
-            var canonical = Path.GetFullPath(command);
-            if (_allowedFullPaths.Contains(canonical))
-                return canonical;
-            throw new UnauthorizedAccessException($"Command path '{command}' is not in the allowed list");
-        }
-
-        if (_resolvedBareCommands.TryGetValue(command, out var resolvedPath))
-            return resolvedPath;
-
-        throw new UnauthorizedAccessException($"Command '{command}' is not in the allowed list");
-    }
-
-    private static Dictionary<string, string>? _resolvedBareCommands;
-    private static HashSet<string>? _allowedFullPaths;
-
-    private static (Dictionary<string, string> bare, HashSet<string> full) ResolveAllowlist(List<string> commands)
-    {
-        var bare = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var full = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
-        var separator = OperatingSystem.IsWindows() ? ';' : ':';
-        var dirs = pathEnv.Split(separator, StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var cmd in commands)
-        {
-            var hasPath = cmd.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
-                || cmd.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
-
-            if (hasPath)
-            {
-                full.Add(Path.GetFullPath(cmd));
+                sb.Append(buffer, 0, n);
                 continue;
             }
 
-            var resolved = FindInPath(cmd, dirs);
-            if (resolved is not null)
-                bare[cmd] = resolved;
-            // If bare command can't be found in PATH at config time, it is
-            // silently excluded — fail closed. The command will be rejected
-            // at invocation time since it won't be in either map.
-        }
-        return (bare, full);
-    }
+            if (truncated)
+                continue; // past the cap: drain and discard so the child isn't blocked on a full pipe
 
-    private static string? FindInPath(string command, string[] dirs)
-    {
-        foreach (var dir in dirs)
-        {
-            var candidate = Path.Combine(dir, command);
-            if (File.Exists(candidate))
-                return Path.GetFullPath(candidate);
-
-            if (OperatingSystem.IsWindows())
+            var remaining = maxChars - sb.Length;
+            if (n <= remaining)
             {
-                foreach (var ext in new[] { ".exe", ".cmd", ".bat" })
-                {
-                    var withExt = candidate + ext;
-                    if (File.Exists(withExt))
-                        return Path.GetFullPath(withExt);
-                }
+                sb.Append(buffer, 0, n);
             }
-        }
-        return null;
-    }
-
-    private static readonly string[] DangerousPrefixes =
-        ["--proxy", "--socks", "--upload-file", "--data-binary"];
-
-    /// <summary>
-    /// Enforces, in order: the built-in argument denylist, any integrator deny-prefixes, and — when the
-    /// command has one or more <see cref="CommandScope"/>s — that the argv matches a scope exactly.
-    /// </summary>
-    internal static void EnforceArgumentPolicy(string command, string[] args)
-    {
-        ValidateArguments(args);
-
-        var scopes = _options?.CommandScopes;
-        if (scopes is not { Count: > 0 })
-            return;
-
-        var name = CommandLeafName(command);
-        List<CommandScope>? matching = null;
-        foreach (var scope in scopes)
-        {
-            if (CommandNameComparer.Equals(scope.Name, name) || CommandNameComparer.Equals(scope.Name, command))
+            else
             {
-                (matching ??= []).Add(scope);
+                sb.Append(buffer, 0, remaining);
+                truncated = true;
             }
         }
 
-        // No scope governs this command -> it must be a legacy AllowedCommands entry (any args allowed).
-        if (matching is null)
-            return;
-
-        foreach (var scope in matching)
-        {
-            if (scope.ArgumentsAllowed(args))
-                return;
-        }
-
-        throw new UnauthorizedAccessException(
-            $"Arguments for command '{command}' are not permitted by the configured command scope");
-    }
-
-    private static string CommandLeafName(string command)
-    {
-        var leaf = Path.GetFileName(command);
-        return string.IsNullOrEmpty(leaf) ? command : leaf;
-    }
-
-    internal static void ValidateArguments(string[] args)
-    {
-        foreach (var arg in args)
-        {
-            foreach (var prefix in DangerousPrefixes)
-            {
-                if (arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException($"Argument '{arg}' is blocked for security.");
-            }
-
-            if (_options?.DenyArgPrefixes is { Count: > 0 } deny)
-            {
-                foreach (var d in deny)
-                {
-                    if (arg.StartsWith(d, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidOperationException($"Argument '{arg}' is blocked by policy.");
-                }
-            }
-        }
-    }
-
-    /// <summary>Parses and validates the JSON arg array, returning a (possibly empty) string[].</summary>
-    internal static string[] ParseArgs(string argsJson)
-    {
-        if (string.IsNullOrEmpty(argsJson) || argsJson == "{}")
-            return [];
-
-        return JsonSerializer.Deserialize(argsJson, ShellJsonContext.Default.StringArray) ?? [];
-    }
-
-    /// <summary>Applies the working-directory and environment-scrubbing policy to a process about to start.</summary>
-    internal static void ApplyProcessPolicy(ProcessStartInfo psi)
-    {
-        var options = _options;
-        if (options is null) return;
-
-        if (!string.IsNullOrEmpty(options.WorkingDirectory))
-            psi.WorkingDirectory = options.WorkingDirectory;
-
-        if (!options.InheritEnvironment)
-        {
-            psi.Environment.Clear();
-            return;
-        }
-
-        if (options.ScrubEnvironmentVariables is { Count: > 0 } scrub)
-        {
-            var toRemove = new List<string>();
-            foreach (var key in psi.Environment.Keys)
-            {
-                foreach (var marker in scrub)
-                {
-                    if (key.Contains(marker, StringComparison.OrdinalIgnoreCase))
-                    {
-                        toRemove.Add(key);
-                        break;
-                    }
-                }
-            }
-            foreach (var key in toRemove)
-                psi.Environment.Remove(key);
-        }
-    }
-
-    // Retained for callers that build a psi externally (spawn/pty share this).
-    internal static void PopulateArguments(ProcessStartInfo psi, string[] args)
-    {
-        foreach (var arg in args)
-            psi.ArgumentList.Add(arg);
+        return (sb.ToString(), truncated);
     }
 }
 
-internal record ProcessOutput(string Stdout, string Stderr, int ExitCode);
+internal record ProcessOutput(string Stdout, string Stderr, int ExitCode, bool Truncated);
 
 internal record KillResult(bool Success, string? Error);
 

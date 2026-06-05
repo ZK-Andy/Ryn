@@ -9,95 +9,97 @@ namespace Ryn.Plugins.Tests;
 
 public sealed class ShellCommandsTests
 {
+    private static ShellExecutionPolicy Policy(ShellOptions options) => new(options);
+
+    private static ShellCommands Shell(ShellOptions options) => new(new ShellExecutionPolicy(options));
+
     [Fact]
     public void ScopedCommand_PermitsMatchingArgs_RejectsOthers()
     {
         // echo is scoped to exactly one literal argument "hello".
-        ShellCommands.Configure(new ShellOptions
+        var shell = Shell(new ShellOptions
         {
             CommandScopes = [new CommandScope("echo", [ArgRule.Literal("hello")])],
         });
 
-        var ok = () => ShellCommands.Execute("echo", "[\"hello\"]");
+        var ok = () => shell.Execute("echo", "[\"hello\"]");
         ok.Should().NotThrow();
 
-        var wrongArg = () => ShellCommands.Execute("echo", "[\"goodbye\"]");
+        var wrongArg = () => shell.Execute("echo", "[\"goodbye\"]");
         wrongArg.Should().Throw<UnauthorizedAccessException>();
 
-        var wrongCount = () => ShellCommands.Execute("echo", "[\"hello\", \"world\"]");
+        var wrongCount = () => shell.Execute("echo", "[\"hello\", \"world\"]");
         wrongCount.Should().Throw<UnauthorizedAccessException>();
     }
 
     [Fact]
     public void ScopedCommand_RegexValidator_Enforced()
     {
-        ShellCommands.Configure(new ShellOptions
+        var shell = Shell(new ShellOptions
         {
             CommandScopes = [new CommandScope("echo", [ArgRule.Pattern("^[a-z]+$")])],
         });
 
-        ((Action)(() => ShellCommands.Execute("echo", "[\"abc\"]"))).Should().NotThrow();
-        ((Action)(() => ShellCommands.Execute("echo", "[\"abc123\"]"))).Should().Throw<UnauthorizedAccessException>();
+        ((Action)(() => shell.Execute("echo", "[\"abc\"]"))).Should().NotThrow();
+        ((Action)(() => shell.Execute("echo", "[\"abc123\"]"))).Should().Throw<UnauthorizedAccessException>();
         // injection attempt is just a non-matching argument, passed literally (never to a shell)
-        ((Action)(() => ShellCommands.Execute("echo", "[\"$(rm -rf /)\"]"))).Should().Throw<UnauthorizedAccessException>();
+        ((Action)(() => shell.Execute("echo", "[\"$(rm -rf /)\"]"))).Should().Throw<UnauthorizedAccessException>();
     }
 
     [Fact]
     public void Execute_FailsClosed_WhenNotConfigured()
     {
-        // Reset to an unconfigured state via reflection-free path: configure then verify the
-        // dedicated "not configured" guard by clearing through an empty options object is not enough,
-        // so we assert the empty-allowlist guard which is the reachable production state.
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = [] });
-        ((Action)(() => ShellCommands.Execute("echo", "[]"))).Should().Throw<UnauthorizedAccessException>();
+        // An empty allowlist is the reachable production "nothing permitted" state.
+        var shell = Shell(new ShellOptions { AllowedCommands = [] });
+        ((Action)(() => shell.Execute("echo", "[]"))).Should().Throw<UnauthorizedAccessException>();
     }
 
     [Fact]
     public void Open_RejectsFileScheme()
     {
-        ShellCommands.Configure(new ShellOptions());
-        ((Action)(() => ShellCommands.ValidateOpenTarget("file:///etc/passwd"))).Should().Throw<UnauthorizedAccessException>();
+        var policy = Policy(new ShellOptions());
+        ((Action)(() => policy.ValidateOpenTarget("file:///etc/passwd"))).Should().Throw<UnauthorizedAccessException>();
     }
 
     [Fact]
     public void Open_RejectsBarePath()
     {
-        ShellCommands.Configure(new ShellOptions());
-        ((Action)(() => ShellCommands.ValidateOpenTarget("/Applications/Calculator.app"))).Should().Throw<UnauthorizedAccessException>();
-        ((Action)(() => ShellCommands.ValidateOpenTarget("Calculator.app"))).Should().Throw<UnauthorizedAccessException>();
+        var policy = Policy(new ShellOptions());
+        ((Action)(() => policy.ValidateOpenTarget("/Applications/Calculator.app"))).Should().Throw<UnauthorizedAccessException>();
+        ((Action)(() => policy.ValidateOpenTarget("Calculator.app"))).Should().Throw<UnauthorizedAccessException>();
     }
 
     [Fact]
     public void Open_AllowsHttpsByDefault()
     {
-        ShellCommands.Configure(new ShellOptions());
-        ((Action)(() => ShellCommands.ValidateOpenTarget("https://example.com"))).Should().NotThrow();
-        ((Action)(() => ShellCommands.ValidateOpenTarget("mailto:a@b.com"))).Should().NotThrow();
+        var policy = Policy(new ShellOptions());
+        ((Action)(() => policy.ValidateOpenTarget("https://example.com"))).Should().NotThrow();
+        ((Action)(() => policy.ValidateOpenTarget("mailto:a@b.com"))).Should().NotThrow();
     }
 
     [Fact]
     public void Open_HonorsConfiguredSchemeAllowlist()
     {
-        ShellCommands.Configure(new ShellOptions { AllowedOpenSchemes = ["https"] });
-        ((Action)(() => ShellCommands.ValidateOpenTarget("https://example.com"))).Should().NotThrow();
-        ((Action)(() => ShellCommands.ValidateOpenTarget("mailto:a@b.com"))).Should().Throw<UnauthorizedAccessException>();
+        var policy = Policy(new ShellOptions { AllowedOpenSchemes = ["https"] });
+        ((Action)(() => policy.ValidateOpenTarget("https://example.com"))).Should().NotThrow();
+        ((Action)(() => policy.ValidateOpenTarget("mailto:a@b.com"))).Should().Throw<UnauthorizedAccessException>();
     }
 
     [Fact]
     public void Execute_DeniedWhenAllowlistEmpty()
     {
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = [] });
+        var shell = Shell(new ShellOptions { AllowedCommands = [] });
 
-        var act = () => ShellCommands.Execute("ls", "[]");
+        var act = () => shell.Execute("ls", "[]");
         act.Should().Throw<UnauthorizedAccessException>();
     }
 
     [Fact]
     public void Execute_AllowedCommand_ReturnsOutput()
     {
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = ["echo"] });
+        var shell = Shell(new ShellOptions { AllowedCommands = ["echo"] });
 
-        var result = ShellCommands.Execute("echo", "[\"hello\"]");
+        var result = shell.Execute("echo", "[\"hello\"]");
         result.Should().Contain("hello");
         result.Should().Contain("exitCode");
     }
@@ -105,18 +107,33 @@ public sealed class ShellCommandsTests
     [Fact]
     public void Execute_DeniedCommand_Throws()
     {
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = ["echo"] });
+        var shell = Shell(new ShellOptions { AllowedCommands = ["echo"] });
 
-        var act = () => ShellCommands.Execute("rm", "[\"-rf\", \"/\"]");
+        var act = () => shell.Execute("rm", "[\"-rf\", \"/\"]");
         act.Should().Throw<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public void Execute_HonorsTimeout_KillsAndThrows()
+    {
+        // A long sleep with a tiny timeout must be terminated and surfaced as a timeout rather than hanging.
+        var shell = Shell(new ShellOptions
+        {
+            AllowedCommands = OperatingSystem.IsWindows() ? ["timeout"] : ["sleep"],
+            ExecuteTimeout = TimeSpan.FromMilliseconds(250),
+        });
+
+        var command = OperatingSystem.IsWindows() ? "timeout" : "sleep";
+        var act = () => shell.Execute(command, "[\"30\"]");
+        act.Should().Throw<TimeoutException>();
     }
 
     [Fact]
     public void Spawn_RejectsDisallowedCommand()
     {
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = ["echo"] });
+        var policy = Policy(new ShellOptions { AllowedCommands = ["echo"] });
         var webView = Substitute.For<IRynWebView>();
-        using var commands = new SpawnCommands(webView);
+        using var commands = new SpawnCommands(webView, policy);
 
         var act = () => commands.Spawn("rm", "[\"-rf\", \"/\"]");
         act.Should().Throw<UnauthorizedAccessException>();
@@ -125,9 +142,9 @@ public sealed class ShellCommandsTests
     [Fact]
     public void Kill_ReturnsErrorForUnknownPid()
     {
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = ["echo"] });
+        var policy = Policy(new ShellOptions { AllowedCommands = ["echo"] });
         var webView = Substitute.For<IRynWebView>();
-        using var commands = new SpawnCommands(webView);
+        using var commands = new SpawnCommands(webView, policy);
 
         var result = commands.Kill(99999);
         result.Should().BeFalse();
@@ -138,9 +155,9 @@ public sealed class ShellCommandsTests
     {
         using var fixture = new CommandFixture("mytool");
 
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = [fixture.FullPath] });
+        var policy = Policy(new ShellOptions { AllowedCommands = [fixture.FullPath] });
 
-        var act = () => ShellCommands.ValidateAndResolveCommand("mytool");
+        var act = () => policy.ValidateAndResolveCommand("mytool");
         act.Should().Throw<UnauthorizedAccessException>();
     }
 
@@ -153,9 +170,9 @@ public sealed class ShellCommandsTests
         Environment.SetEnvironmentVariable("PATH", fixture.Directory + (OperatingSystem.IsWindows() ? ";" : ":") + originalPath);
         try
         {
-            ShellCommands.Configure(new ShellOptions { AllowedCommands = ["mytool"] });
+            var policy = Policy(new ShellOptions { AllowedCommands = ["mytool"] });
 
-            var resolved = ShellCommands.ValidateAndResolveCommand("mytool");
+            var resolved = policy.ValidateAndResolveCommand("mytool");
 
             resolved.Should().NotBe("mytool");
             Path.IsPathRooted(resolved).Should().BeTrue();
@@ -170,12 +187,12 @@ public sealed class ShellCommandsTests
     [Fact]
     public void UnresolvedBareAllowlist_RejectsAtInvocation()
     {
-        ShellCommands.Configure(new ShellOptions
+        var policy = Policy(new ShellOptions
         {
             AllowedCommands = ["this_command_does_not_exist_anywhere_in_path"]
         });
 
-        var act = () => ShellCommands.ValidateAndResolveCommand("this_command_does_not_exist_anywhere_in_path");
+        var act = () => policy.ValidateAndResolveCommand("this_command_does_not_exist_anywhere_in_path");
         act.Should().Throw<UnauthorizedAccessException>();
     }
 
@@ -184,9 +201,9 @@ public sealed class ShellCommandsTests
     {
         using var fixture = new CommandFixture("mytool");
 
-        ShellCommands.Configure(new ShellOptions { AllowedCommands = [fixture.FullPath] });
+        var policy = Policy(new ShellOptions { AllowedCommands = [fixture.FullPath] });
 
-        var resolved = ShellCommands.ValidateAndResolveCommand(fixture.FullPath);
+        var resolved = policy.ValidateAndResolveCommand(fixture.FullPath);
         resolved.Should().Be(fixture.FullPath);
     }
 
@@ -200,17 +217,17 @@ public sealed class ShellCommandsTests
         var sep = OperatingSystem.IsWindows() ? ";" : ":";
         try
         {
-            // Configure with legitimate first in PATH
+            // Configure (i.e. construct the policy) with legitimate first in PATH
             Environment.SetEnvironmentVariable("PATH",
                 legitimate.Directory + sep + originalPath);
-            ShellCommands.Configure(new ShellOptions { AllowedCommands = ["mytool"] });
+            var policy = Policy(new ShellOptions { AllowedCommands = ["mytool"] });
 
             // Now swap PATH so malicious comes first
             Environment.SetEnvironmentVariable("PATH",
                 malicious.Directory + sep + originalPath);
 
-            // Resolution is pinned to configure time — malicious binary is ignored
-            var resolved = ShellCommands.ValidateAndResolveCommand("mytool");
+            // Resolution is pinned to construction time — malicious binary is ignored
+            var resolved = policy.ValidateAndResolveCommand("mytool");
             resolved.Should().Be(legitimate.FullPath);
             resolved.Should().NotBe(malicious.FullPath);
         }
