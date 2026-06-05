@@ -1,5 +1,3 @@
-using System.Reflection;
-
 namespace Ryn.Cli;
 
 internal static class Program
@@ -29,27 +27,8 @@ internal static class Program
 
     private static int HandleVersion()
     {
-        Console.WriteLine(FormattableString.Invariant($"ryn {GetInformationalVersion()}"));
+        Console.WriteLine(FormattableString.Invariant($"ryn {RynCliVersion.Current}"));
         return 0;
-    }
-
-    /// <summary>
-    /// Returns the real product version. Under MinVer the <c>AssemblyVersion</c> is stamped as
-    /// <c>{Major}.0.0.0</c> (i.e. <c>0.0.0.0</c> for a 0.x release), so reading <c>GetName().Version</c>
-    /// would always print <c>0.0.0.0</c>. The full SemVer lives in
-    /// <see cref="AssemblyInformationalVersionAttribute"/>; we strip the trailing <c>+&lt;commit&gt;</c>
-    /// build-metadata that the SDK appends.
-    /// </summary>
-    private static string GetInformationalVersion()
-    {
-        var informational = typeof(Program).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-
-        if (string.IsNullOrEmpty(informational))
-            return typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
-
-        var plus = informational.IndexOf('+', StringComparison.Ordinal);
-        return plus >= 0 ? informational[..plus] : informational;
     }
 
     private static int HandleHelp()

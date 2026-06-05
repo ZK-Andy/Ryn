@@ -7,11 +7,12 @@ namespace Ryn.Cli.Commands;
 internal static class NewCommand
 {
     /// <summary>
-    /// Version of the published <c>Ryn</c> metapackage that generated projects reference. Bump this in
-    /// lock-step with each release tag (it is not derived from the CLI's own MinVer version, since a user
-    /// running an older CLI should still scaffold against a package version that exists on NuGet).
+    /// Version of the <c>Ryn</c> metapackage that generated projects reference. Derived from the CLI's own
+    /// MinVer version (<see cref="RynCliVersion.Current"/>): the CLI and the NuGet packages release in
+    /// lock-step from the same git tags, so a released <c>ryn</c> always scaffolds against a matching,
+    /// published <c>Ryn</c> version — no hand-maintained literal.
     /// </summary>
-    private const string RynPackageVersion = "0.1.0-alpha.2";
+    private static string RynPackageVersion => RynCliVersion.Current;
 
     internal static int Execute(ReadOnlySpan<string> args)
     {

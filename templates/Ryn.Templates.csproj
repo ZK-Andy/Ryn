@@ -12,8 +12,41 @@
     <NoWarn>$(NoWarn);NU5128</NoWarn>
     <PackageReadmeFile></PackageReadmeFile>
   </PropertyGroup>
+
+  <!--
+    The template's RynApp.csproj references the Ryn metapackage with a RYN_PACKAGE_VERSION placeholder.
+    Stage the template content into obj/ with that placeholder replaced by MinVer's $(Version), then pack the
+    staged copy, so a scaffolded app always references the Ryn version matching this template release — no
+    hand-maintained version literal. The source file keeps the placeholder (it is never packed directly).
+  -->
+  <PropertyGroup>
+    <!-- Absolute path under obj/ (gitignored, forward slashes) so staging never writes into the source tree. -->
+    <RynTemplateStageDir>$(MSBuildProjectDirectory)/obj/ryn-template-stage/ryn-app</RynTemplateStageDir>
+  </PropertyGroup>
+
+  <Target Name="StageRynTemplateContent"
+          DependsOnTargets="MinVer"
+          BeforeTargets="GenerateNuspec;Build">
+    <ItemGroup>
+      <_RynTemplateSource Include="ryn-app/**/*" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_RynTemplateSource)"
+          DestinationFiles="@(_RynTemplateSource->'$(RynTemplateStageDir)/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="false" />
+
+    <WriteLinesToFile
+        File="$(RynTemplateStageDir)/RynApp.csproj"
+        Lines="$([System.IO.File]::ReadAllText('$(RynTemplateStageDir)/RynApp.csproj').Replace('RYN_PACKAGE_VERSION','$(Version)'))"
+        Overwrite="true" />
+
+    <ItemGroup>
+      <Content Include="$(RynTemplateStageDir)/**/*"
+               PackagePath="content/ryn-app/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
-    <Content Include="ryn-app/**/*" />
     <Compile Remove="**/*" />
   </ItemGroup>
 </Project>
