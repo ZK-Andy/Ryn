@@ -1,3 +1,13 @@
+# Publishes all packages to NuGet.org when a version tag (v*) is pushed.
+# Versions come from the tag via MinVer (e.g. tag v0.1.0-alpha.2 -> 0.1.0-alpha.2).
+#
+# One-time setup (no API-key secret needed — uses NuGet trusted publishing / OIDC):
+#   1. On nuget.org: Account -> Trusted Publishing -> add a GitHub Actions policy with
+#      Repository owner: Yupmoh, Repository: Ryn, Workflow file: release.yml.
+#      (Set a package glob like Ryn.* so new package IDs are covered on first publish.)
+#   2. In this repo: Settings -> Secrets and variables -> Actions -> Variables ->
+#      add NUGET_USER = your nuget.org username.
+#   3. Cut a release:  git tag v0.1.0-alpha.2 && git push origin v0.1.0-alpha.2
 name: Release
 
 on:
@@ -14,22 +24,19 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write
-      packages: write
+      contents: write    # read native-lib release assets + create the GitHub release
+      id-token: write    # OIDC token for NuGet trusted publishing
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0   # MinVer derives the package version from the tag + history
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-
-      - name: Extract version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Download native libraries for all platforms
         env:
@@ -81,13 +88,13 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build -c Release -p:VersionPrefix=${{ steps.version.outputs.VERSION }}
+        run: dotnet build -c Release   # MinVer sets the version from the pushed tag
 
       - name: Test
         run: dotnet test -c Release --no-build
 
       - name: Pack
-        run: dotnet pack -c Release -p:VersionPrefix=${{ steps.version.outputs.VERSION }} -o ./nupkg
+        run: dotnet pack -c Release --no-build -o ./nupkg
 
       - name: Verify native assets in Ryn.Interop package
         shell: bash
@@ -126,8 +133,17 @@ jobs:
             fi
           done
 
+      # Trusted publishing: exchange the GitHub OIDC token for a short-lived NuGet API key.
+      # No long-lived secret — configure a trusted publisher policy on NuGet.org instead
+      # (see the comment at the top of this file).
+      - name: Authenticate to NuGet (trusted publishing)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ vars.NUGET_USER }}
+
       - name: Push to NuGet
-        run: dotnet nuget push "./nupkg/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "./nupkg/*.nupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

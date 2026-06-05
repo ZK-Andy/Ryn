@@ -32,10 +32,17 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <!-- Central versioning -->
-    <VersionPrefix>0.1.0</VersionPrefix>
-    <VersionSuffix>alpha.1</VersionSuffix>
+    <!-- Automatic versioning from git tags (MinVer). Cut a release by tagging the commit,
+         e.g. `git tag v0.1.0-alpha.2 && git push origin v0.1.0-alpha.2` — every package then
+         builds as 0.1.0-alpha.2. Commits after a tag get a height suffix (…-alpha.2.3); before
+         the first version tag, builds are 0.1.0-alpha.0.<height> (floored by MinVerMinimumMajorMinor). -->
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" PrivateAssets="all" />
+  </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DebugType>none</DebugType>
