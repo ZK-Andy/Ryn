@@ -6,6 +6,13 @@ namespace Ryn.Cli.Commands;
 
 internal static class NewCommand
 {
+    /// <summary>
+    /// Version of the published <c>Ryn</c> metapackage that generated projects reference. Bump this in
+    /// lock-step with each release tag (it is not derived from the CLI's own MinVer version, since a user
+    /// running an older CLI should still scaffold against a package version that exists on NuGet).
+    /// </summary>
+    private const string RynPackageVersion = "0.1.0-alpha.2";
+
     internal static int Execute(ReadOnlySpan<string> args)
     {
         if (args.Length == 0)
@@ -58,7 +65,7 @@ internal static class NewCommand
         }
         else
         {
-            Console.WriteLine("  Using NuGet package references (Ryn packages not yet published — run from within the Ryn repo for project references)");
+            Console.WriteLine($"  Using NuGet package references (Ryn {RynPackageVersion})");
         }
         Console.WriteLine("  Created project files");
 
@@ -170,10 +177,12 @@ internal static class NewCommand
         }
         else
         {
-            references = """
+            // Single Ryn metapackage: it pulls in Ryn.Core + Ryn.Interop (native libs) and, transitively,
+            // Ryn.Ipc — which ships the [RynCommand] source generator as an analyzer. Referencing the
+            // individual packages here would risk shipping the generator twice.
+            references = $"""
                   <ItemGroup>
-                    <PackageReference Include="Ryn.Core" Version="0.1.0-alpha.1" />
-                    <PackageReference Include="Ryn.Ipc" Version="0.1.0-alpha.1" />
+                    <PackageReference Include="Ryn" Version="{RynPackageVersion}" />
                   </ItemGroup>
               """;
         }

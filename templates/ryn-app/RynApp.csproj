@@ -15,7 +15,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Ryn.Core" Version="0.1.0-alpha.1" />
-    <PackageReference Include="Ryn.Ipc" Version="0.1.0-alpha.1" />
+    <!-- Single Ryn metapackage: pulls in Ryn.Core + Ryn.Interop and, transitively, Ryn.Ipc (which ships
+         the [RynCommand] source generator as an analyzer). Bump in lock-step with each release. -->
+    <PackageReference Include="Ryn" Version="0.1.0-alpha.2" />
   </ItemGroup>
 </Project>
