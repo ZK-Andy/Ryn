@@ -9,11 +9,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="runtimes/**/*" Pack="true" PackagePath="runtimes" />
-    <!-- Pack="false": packaging happens via the None item above (-> runtimes/) + Ryn.Interop.targets.
-         This Content item only copies the native libs to output for in-repo project references;
-         packing it as content/contentFiles would flag Windows .dll as misplaced assemblies (NU5100). -->
-    <Content Include="runtimes/**/*" Pack="false" CopyToOutputDirectory="PreserveNewest" Link="runtimes/%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- One item that both packs the native libs into runtimes/ AND copies them to output for
+         in-repo project references. Using a single None (not a separate Content) avoids two things:
+         packing into content/contentFiles, where Windows .dll get rejected as misplaced assemblies
+         (NU5100); and a Pack-metadata conflict between overlapping None/Content globs that dropped
+         files from the package entirely. -->
+    <None Include="runtimes/**/*"
+          Pack="true" PackagePath="runtimes/%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="runtimes/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
