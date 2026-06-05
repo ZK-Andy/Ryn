@@ -10,7 +10,10 @@
 
   <ItemGroup>
     <None Include="runtimes/**/*" Pack="true" PackagePath="runtimes" />
-    <Content Include="runtimes/**/*" CopyToOutputDirectory="PreserveNewest" Link="runtimes/%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Pack="false": packaging happens via the None item above (-> runtimes/) + Ryn.Interop.targets.
+         This Content item only copies the native libs to output for in-repo project references;
+         packing it as content/contentFiles would flag Windows .dll as misplaced assemblies (NU5100). -->
+    <Content Include="runtimes/**/*" Pack="false" CopyToOutputDirectory="PreserveNewest" Link="runtimes/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

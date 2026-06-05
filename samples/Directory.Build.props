@@ -1,0 +1,10 @@
+<Project>
+  <!-- Inherit the repo-wide build settings (this file would otherwise shadow the root one), then
+       mark sample apps as non-packable so the solution-level `dotnet pack` in release.yml does not
+       publish them to NuGet. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

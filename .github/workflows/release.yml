@@ -96,8 +96,11 @@ jobs:
       - name: Test
         run: dotnet test -c Release --no-build --filter "Category!=Integration&Category!=Package"
 
+      # No --no-build: the Ryn bundle resolves its project references during pack, which trips
+      # NETSDK1085 ("NoBuild set but Build invoked") under --no-build. An incremental build here
+      # is a near no-op since the Build step above already compiled everything.
       - name: Pack
-        run: dotnet pack -c Release --no-build -o ./nupkg
+        run: dotnet pack -c Release -o ./nupkg
 
       - name: Verify packaged assets
         shell: bash

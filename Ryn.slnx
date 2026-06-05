@@ -12,6 +12,9 @@
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Ryn.Benchmarks/Ryn.Benchmarks.csproj" />
   </Folder>
+  <Folder Name="/templates/">
+    <Project Path="templates/Ryn.Templates.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Ryn/Ryn.csproj" />
     <Project Path="src/Ryn.Cli/Ryn.Cli.csproj" />
