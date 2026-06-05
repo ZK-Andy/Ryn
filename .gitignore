@@ -63,6 +63,7 @@ build/native/
 
 ## Local dev / tooling
 CLAUDE.md
+AGENTS.md
 .claude/
 
 ## Secrets
