@@ -182,21 +182,31 @@ jobs:
             done
           }
 
-          # Both Ryn.Interop and the Ryn bundle ship the native runtimes.
+          # Native libraries ship in Ryn.Interop.
           verify_native "./nupkg/Ryn.Interop.*.nupkg"
-          verify_native "./nupkg/Ryn.[0-9]*.nupkg"
 
-          # The Ryn bundle must also carry the framework assemblies + the IPC source generator.
-          echo "== Ryn bundle contents =="
-          RYN_CONTENTS=$(unzip -l $(ls ./nupkg/Ryn.[0-9]*.nupkg | head -1))
-          for f in lib/net10.0/Ryn.Core.dll lib/net10.0/Ryn.Ipc.dll lib/net10.0/Ryn.Interop.dll \
-                   analyzers/dotnet/cs/Ryn.Ipc.Generator.dll; do
-            if echo "$RYN_CONTENTS" | grep -qF "$f"; then
-              echo "  OK: $f"
+          # Ryn is a metapackage: it must DECLARE dependencies on Core/Ipc/Interop (not contain them).
+          echo "== Ryn metapackage dependencies =="
+          RYN_NUSPEC=$(unzip -p "$(ls ./nupkg/Ryn.[0-9]*.nupkg | head -1)" Ryn.nuspec)
+          for dep in Ryn.Core Ryn.Ipc Ryn.Interop; do
+            if echo "$RYN_NUSPEC" | grep -q "dependency id=\"$dep\""; then
+              echo "  OK: Ryn -> $dep"
             else
-              echo "  FATAL: Ryn bundle missing $f"; exit 1
+              echo "  FATAL: Ryn metapackage missing dependency $dep"; exit 1
             fi
           done
+
+          # The IPC source generator must ship from exactly ONE package (Ryn.Ipc). If it also
+          # shipped from Ryn, an app using Ryn + a plugin would load two copies and emit duplicate
+          # code (the alpha.1 bug).
+          echo "== generator ships once (Ryn.Ipc only) =="
+          if ! unzip -Z1 "$(ls ./nupkg/Ryn.Ipc.[0-9]*.nupkg | head -1)" | grep -q 'analyzers/dotnet/cs/Ryn.Ipc.Generator.dll'; then
+            echo "  FATAL: Ryn.Ipc must ship the IPC source generator"; exit 1
+          fi
+          if unzip -Z1 "$(ls ./nupkg/Ryn.[0-9]*.nupkg | head -1)" | grep -q 'Ryn.Ipc.Generator'; then
+            echo "  FATAL: the Ryn metapackage must NOT ship the generator (would duplicate)"; exit 1
+          fi
+          echo "  OK: generator only in Ryn.Ipc"
 
       # Trusted publishing: exchange the GitHub OIDC token for a short-lived NuGet API key.
       # No long-lived secret — configure a trusted publisher policy on NuGet.org instead
