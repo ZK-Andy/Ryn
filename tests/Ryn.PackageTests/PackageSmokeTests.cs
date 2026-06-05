@@ -195,6 +195,14 @@ public sealed class PackageSmokeTests : IDisposable
             process.StartInfo.ArgumentList.Add(arg);
         }
 
+        // Disable persistent build servers (MSBuild node reuse + VB/C# compiler server). On a cold
+        // start they would be spawned by this build, inherit the redirected stdout/stderr handles,
+        // and keep the pipe open after dotnet exits — so ReadToEndAsync never sees EOF and the test
+        // hangs until the server times out (~15 min). It only "passes" when a warm server already exists.
+        process.StartInfo.ArgumentList.Add("--disable-build-servers");
+        process.StartInfo.Environment["MSBUILDDISABLENODEREUSE"] = "1";
+        process.StartInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+
         process.Start();
 
         // Read both streams to avoid deadlocks
