@@ -99,32 +99,50 @@ jobs:
       - name: Pack
         run: dotnet pack -c Release --no-build -o ./nupkg
 
-      - name: Verify native assets in Ryn.Interop package
+      - name: Verify packaged assets
         shell: bash
         run: |
-          INTEROP_PKG=$(ls ./nupkg/Ryn.Interop.*.nupkg | head -1)
-          echo "Inspecting: $INTEROP_PKG"
-          CONTENTS=$(unzip -l "$INTEROP_PKG" | grep "runtimes/")
-          echo "$CONTENTS"
+          # Required native files per RID. The saucer engine is listed explicitly so a
+          # missing-engine regression (which shipped before) fails the release loudly.
+          rid_files() {
+            case "$1" in
+              osx-arm64) echo "libsaucer.dylib libsaucer-bindings.dylib libsaucer-bindings-desktop.dylib libryn-pty.dylib" ;;
+              linux-x64) echo "libsaucer.so libsaucer-bindings.so libsaucer-bindings-desktop.so libryn-pty.so" ;;
+              win-x64)   echo "saucer.dll saucer-bindings.dll saucer-bindings-desktop.dll WebView2Loader.dll" ;;
+            esac
+          }
 
-          # Per-RID: every required native file must be present under that RID's native/ dir.
-          # The saucer engine (saucer) is included explicitly so a missing-engine regression
-          # (which shipped before) fails the release loudly instead of slipping through.
-          check_rid() {
-            local rid="$1"; shift
-            for f in "$@"; do
-              if echo "$CONTENTS" | grep -qF "runtimes/${rid}/native/${f}"; then
-                echo "OK: ${rid}/${f}"
-              else
-                echo "FATAL: ${rid}/${f} missing from package"
-                exit 1
-              fi
+          verify_native() {
+            local pkg; pkg=$(ls $1 | head -1)
+            echo "== native assets in $(basename "$pkg") =="
+            local contents; contents=$(unzip -l "$pkg")
+            local rid f
+            for rid in osx-arm64 linux-x64 win-x64; do
+              for f in $(rid_files "$rid"); do
+                if echo "$contents" | grep -qF "runtimes/${rid}/native/${f}"; then
+                  echo "  OK: ${rid}/${f}"
+                else
+                  echo "  FATAL: ${rid}/${f} missing from $(basename "$pkg")"; exit 1
+                fi
+              done
             done
           }
 
-          check_rid osx-arm64 libsaucer.dylib libsaucer-bindings.dylib libsaucer-bindings-desktop.dylib libryn-pty.dylib
-          check_rid linux-x64 libsaucer.so    libsaucer-bindings.so    libsaucer-bindings-desktop.so    libryn-pty.so
-          check_rid win-x64   saucer.dll      saucer-bindings.dll      saucer-bindings-desktop.dll      WebView2Loader.dll
+          # Both Ryn.Interop and the Ryn bundle ship the native runtimes.
+          verify_native "./nupkg/Ryn.Interop.*.nupkg"
+          verify_native "./nupkg/Ryn.[0-9]*.nupkg"
+
+          # The Ryn bundle must also carry the framework assemblies + the IPC source generator.
+          echo "== Ryn bundle contents =="
+          RYN_CONTENTS=$(unzip -l $(ls ./nupkg/Ryn.[0-9]*.nupkg | head -1))
+          for f in lib/net10.0/Ryn.Core.dll lib/net10.0/Ryn.Ipc.dll lib/net10.0/Ryn.Interop.dll \
+                   analyzers/dotnet/cs/Ryn.Ipc.Generator.dll; do
+            if echo "$RYN_CONTENTS" | grep -qF "$f"; then
+              echo "  OK: $f"
+            else
+              echo "  FATAL: Ryn bundle missing $f"; exit 1
+            fi
+          done
 
       # Trusted publishing: exchange the GitHub OIDC token for a short-lived NuGet API key.
       # No long-lived secret — configure a trusted publisher policy on NuGet.org instead
