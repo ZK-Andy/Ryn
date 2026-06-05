@@ -97,7 +97,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           RIDS="osx-arm64 linux-x64 win-x64"
-          TAG=$(gh release list --repo ${{ github.repository }} --limit 10 | grep -o 'native-v[^ ]*' | head -1 || true)
+
+          # Resolve the native-libs release by tag (don't rely on "latest" — version releases are
+          # prereleases too, so GitHub may report no latest). --json/--jq avoids tab-capture bugs.
+          TAG=$(gh release list --repo ${{ github.repository }} --limit 50 --json tagName \
+                  --jq 'map(select(.tagName | startswith("native-v"))) | sort_by(.tagName) | last.tagName')
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "FATAL: no native-v* release found"; exit 1
+          fi
+          echo "Using native-libs release: $TAG"
 
           for RID in $RIDS; do
             EXT=".tar.gz"
@@ -106,26 +114,15 @@ jobs:
             DEST="src/Ryn.Interop/runtimes/${RID}/native"
             mkdir -p "$DEST"
 
-            DOWNLOADED=false
-            if gh release download --repo ${{ github.repository }} --pattern "$ARCHIVE" --dir /tmp --clobber 2>/dev/null; then
-              DOWNLOADED=true
-            elif [ -n "$TAG" ]; then
-              if gh release download "$TAG" --repo ${{ github.repository }} --pattern "$ARCHIVE" --dir /tmp --clobber 2>/dev/null; then
-                DOWNLOADED=true
-              fi
+            if ! gh release download "$TAG" --repo ${{ github.repository }} --pattern "$ARCHIVE" --dir /tmp --clobber; then
+              echo "FATAL: $ARCHIVE not found in release $TAG"; exit 1
             fi
-
-            if [ "$DOWNLOADED" = "true" ]; then
-              if [ "$EXT" = ".zip" ]; then
-                unzip -o "/tmp/$ARCHIVE" -d "$DEST"
-              else
-                tar -xzf "/tmp/$ARCHIVE" -C "$DEST"
-              fi
-              echo "Downloaded native libs for $RID"
+            if [ "$EXT" = ".zip" ]; then
+              unzip -o "/tmp/$ARCHIVE" -d "$DEST"
             else
-              echo "FATAL: No native libs for $RID"
-              exit 1
+              tar -xzf "/tmp/$ARCHIVE" -C "$DEST"
             fi
+            echo "Downloaded native libs for $RID"
           done
 
           # Verify all expected files exist
