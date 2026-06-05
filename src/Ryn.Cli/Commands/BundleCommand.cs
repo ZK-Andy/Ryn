@@ -109,9 +109,10 @@ internal static class BundleCommand
             catch (IOException) { /* use defaults */ }
         }
 
-        // Write Info.plist
-        var iconEntry = iconPath is not null
-            ? $"\n            <key>CFBundleIconFile</key>\n            <string>{Path.GetFileName(iconPath)}</string>"
+        // Build Contents/Resources/AppIcon.icns from the app's icon, or the bundled Ryn default.
+        var icnsName = ResolveMacIcon(projectDir, resourcesDir, iconPath);
+        var iconEntry = icnsName is not null
+            ? $"\n            <key>CFBundleIconFile</key>\n            <string>{icnsName}</string>"
             : "";
         var plist = $"""
             <?xml version="1.0" encoding="UTF-8"?>
@@ -167,13 +168,6 @@ internal static class BundleCommand
                 if (destDir is not null) Directory.CreateDirectory(destDir);
                 File.Copy(file, destPath, overwrite: true);
             }
-        }
-
-        // Copy icon if specified
-        if (iconPath is not null && File.Exists(iconPath))
-        {
-            File.Copy(iconPath, Path.Combine(resourcesDir, Path.GetFileName(iconPath)), overwrite: true);
-            Console.WriteLine($"  Icon: {Path.GetFileName(iconPath)}");
         }
 
         // Code sign if identity specified
@@ -233,6 +227,124 @@ internal static class BundleCommand
                 return args[i + 1];
         }
         return null;
+    }
+
+    /// <summary>
+    /// Produces <c>Contents/Resources/AppIcon.icns</c> from the app's own icon, or — when none is supplied —
+    /// the bundled Ryn default. PNG sources are converted via the macOS <c>sips</c>/<c>iconutil</c> toolchain.
+    /// Returns the <c>CFBundleIconFile</c> base name (<c>AppIcon</c>), or null if no icon could be produced.
+    /// </summary>
+    private static string? ResolveMacIcon(string projectDir, string resourcesDir, string? iconPath)
+    {
+        var source = ResolveIconSource(projectDir, iconPath);
+        var usingDefault = false;
+        if (source is null)
+        {
+            source = ExtractEmbeddedIcon("Ryn.Cli.ryn-icon.png", ".png");
+            usingDefault = source is not null;
+        }
+        if (source is null)
+            return null;
+
+        var icnsDest = Path.Combine(resourcesDir, "AppIcon.icns");
+        bool ok;
+        if (source.EndsWith(".icns", StringComparison.OrdinalIgnoreCase))
+        {
+            try { File.Copy(source, icnsDest, overwrite: true); ok = true; }
+            catch (IOException) { ok = false; }
+        }
+        else
+        {
+            ok = TryGenerateIcns(source, icnsDest);
+        }
+
+        if (!ok)
+        {
+            Console.Error.WriteLine("  Warning: could not generate the app icon (.icns); the bundle will use the system default.");
+            return null;
+        }
+
+        Console.WriteLine(usingDefault ? "  Icon: bundled Ryn default" : $"  Icon: {Path.GetFileName(source)}");
+        return "AppIcon";
+    }
+
+    /// <summary>Builds a multi-resolution .icns from a PNG via the macOS sips + iconutil tools.</summary>
+    private static bool TryGenerateIcns(string sourcePng, string icnsPath)
+    {
+        var iconset = Path.Combine(Path.GetTempPath(), $"ryn_icon_{Guid.NewGuid():N}.iconset");
+        try
+        {
+            Directory.CreateDirectory(iconset);
+
+            (int Size, string Name)[] entries =
+            {
+                (16, "icon_16x16"), (32, "icon_16x16@2x"), (32, "icon_32x32"), (64, "icon_32x32@2x"),
+                (128, "icon_128x128"), (256, "icon_128x128@2x"), (256, "icon_256x256"), (512, "icon_256x256@2x"),
+                (512, "icon_512x512"), (1024, "icon_512x512@2x"),
+            };
+
+            foreach (var (size, name) in entries)
+            {
+                var dim = size.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (!RunTool("sips", "-z", dim, dim, sourcePng, "--out", Path.Combine(iconset, name + ".png")))
+                    return false;
+            }
+
+            return RunTool("iconutil", "-c", "icns", iconset, "-o", icnsPath) && File.Exists(icnsPath);
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+        finally
+        {
+            try { if (Directory.Exists(iconset)) Directory.Delete(iconset, recursive: true); }
+            catch (IOException) { /* best-effort cleanup */ }
+        }
+    }
+
+    private static bool RunTool(string fileName, params string[] arguments)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            foreach (var arg in arguments) psi.ArgumentList.Add(arg);
+            var process = Process.Start(psi);
+            if (process is null) return false;
+            process.WaitForExit();
+            return process.ExitCode == 0;
+        }
+        catch (System.ComponentModel.Win32Exception) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    /// <summary>Resolves an app-supplied icon path (absolute or project-relative) to an existing file, or null.</summary>
+    private static string? ResolveIconSource(string projectDir, string? iconPath)
+    {
+        if (string.IsNullOrEmpty(iconPath)) return null;
+        var resolved = Path.IsPathRooted(iconPath) ? iconPath : Path.Combine(projectDir, iconPath);
+        return File.Exists(resolved) ? resolved : null;
+    }
+
+    /// <summary>Writes an embedded default icon resource to a temp file and returns its path, or null.</summary>
+    private static string? ExtractEmbeddedIcon(string resourceName, string extension)
+    {
+        using var stream = typeof(BundleCommand).Assembly.GetManifestResourceStream(resourceName);
+        if (stream is null) return null;
+
+        var dest = Path.Combine(Path.GetTempPath(), $"ryn_default_icon_{Guid.NewGuid():N}{extension}");
+        try
+        {
+            using var fs = File.Create(dest);
+            stream.CopyTo(fs);
+            return dest;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
     }
 
     private static int CreateWindowsBundle(string projectDir, string projectName, string publishDir, ReadOnlySpan<string> args)
@@ -296,15 +408,20 @@ internal static class BundleCommand
             }
         }
 
-        // Copy icon if specified
-        if (iconPath is not null)
+        // Copy the app icon, or the bundled Ryn default (.ico), into the bundle for the installer/shortcut.
+        var resolvedIcon = ResolveIconSource(projectDir, iconPath);
+        var usingDefaultIcon = false;
+        if (resolvedIcon is null)
         {
-            var resolvedIcon = Path.IsPathRooted(iconPath) ? iconPath : Path.Combine(projectDir, iconPath);
-            if (File.Exists(resolvedIcon))
-            {
-                File.Copy(resolvedIcon, Path.Combine(bundleDir, Path.GetFileName(resolvedIcon)), overwrite: true);
-                Console.WriteLine($"  Icon: {Path.GetFileName(resolvedIcon)}");
-            }
+            resolvedIcon = ExtractEmbeddedIcon("Ryn.Cli.ryn-icon.ico", ".ico");
+            usingDefaultIcon = resolvedIcon is not null;
+        }
+        string? bundledIconName = null;
+        if (resolvedIcon is not null && File.Exists(resolvedIcon))
+        {
+            bundledIconName = usingDefaultIcon ? "AppIcon.ico" : Path.GetFileName(resolvedIcon);
+            File.Copy(resolvedIcon, Path.Combine(bundleDir, bundledIconName), overwrite: true);
+            Console.WriteLine(usingDefaultIcon ? "  Icon: bundled Ryn default" : $"  Icon: {bundledIconName}");
         }
 
         // Create run.bat launcher
@@ -317,7 +434,7 @@ internal static class BundleCommand
 
         // Generate WiX v5 .wxs file for MSI creation
         var wxsPath = Path.Combine(bundleDir, $"{projectName}.wxs");
-        GenerateWixFile(wxsPath, bundleDir, projectName, bundleVersion, manufacturer, iconPath);
+        GenerateWixFile(wxsPath, bundleDir, projectName, bundleVersion, manufacturer, bundledIconName);
 
         Console.WriteLine();
         Console.WriteLine($"  Windows bundle created: {bundleDir}");
@@ -494,21 +611,24 @@ internal static class BundleCommand
         var lowerName = projectName.ToLowerInvariant();
 #pragma warning restore CA1308
         var iconLine = "";
-        if (iconPath is not null)
+        // Use the app's icon, or fall back to the bundled Ryn default (PNG, native for hicolor/AppImage).
+        var resolvedIcon = ResolveIconSource(projectDir, iconPath);
+        var usingDefaultIcon = false;
+        if (resolvedIcon is null)
         {
-            var resolvedIcon = Path.IsPathRooted(iconPath) ? iconPath : Path.Combine(projectDir, iconPath);
-            if (File.Exists(resolvedIcon))
-            {
-                // Copy to AppDir root (required by AppImage spec)
-                var rootIconDest = Path.Combine(bundleDir, $"{lowerName}{Path.GetExtension(resolvedIcon)}");
-                File.Copy(resolvedIcon, rootIconDest, overwrite: true);
+            resolvedIcon = ExtractEmbeddedIcon("Ryn.Cli.ryn-icon.png", ".png");
+            usingDefaultIcon = resolvedIcon is not null;
+        }
+        if (resolvedIcon is not null && File.Exists(resolvedIcon))
+        {
+            var ext = Path.GetExtension(resolvedIcon);
+            // Copy to AppDir root (required by AppImage spec)
+            File.Copy(resolvedIcon, Path.Combine(bundleDir, $"{lowerName}{ext}"), overwrite: true);
+            // Also copy to hicolor icons for desktop integration
+            File.Copy(resolvedIcon, Path.Combine(usrShareIcons, $"{lowerName}{ext}"), overwrite: true);
 
-                // Also copy to hicolor icons for desktop integration
-                File.Copy(resolvedIcon, Path.Combine(usrShareIcons, $"{lowerName}{Path.GetExtension(resolvedIcon)}"), overwrite: true);
-
-                iconLine = $"\nIcon={lowerName}";
-                Console.WriteLine($"  Icon: {Path.GetFileName(resolvedIcon)}");
-            }
+            iconLine = $"\nIcon={lowerName}";
+            Console.WriteLine(usingDefaultIcon ? "  Icon: bundled Ryn default" : $"  Icon: {Path.GetFileName(resolvedIcon)}");
         }
 
         // Generate .desktop entry with categories and icon

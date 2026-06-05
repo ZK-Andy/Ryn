@@ -10,4 +10,14 @@
     <NoWarn>CA1303</NoWarn>
   </PropertyGroup>
 
+  <!-- Default Ryn app icons, embedded so `ryn bundle` can brand an app that ships no icon of its own. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets/ryn-icon.png">
+      <LogicalName>Ryn.Cli.ryn-icon.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Assets/ryn-icon.ico">
+      <LogicalName>Ryn.Cli.ryn-icon.ico</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>
