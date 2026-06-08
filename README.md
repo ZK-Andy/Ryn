@@ -16,6 +16,10 @@
   <strong>Rich Yet Native</strong> — a cross-platform, lightweight .NET framework for building desktop applications with web UIs.
 </p>
 
+<p align="center">
+  Created &amp; maintained by <a href="https://github.com/Yupmoh">Moh</a>
+</p>
+
 Ryn gives .NET developers the Tauri experience without leaving C#. Native OS webviews, HTML/CSS/JS frontends, NativeAOT-ready, source-generated IPC.
 
 ## Why Ryn?
@@ -28,9 +32,21 @@ Ryn gives .NET developers the Tauri experience without leaving C#. Native OS web
 - **Security model** — Unified `ryn.json` capability scopes with deny-all semantics
 - **Branded by default** — every window (and bundled `.app`/installer) ships with the Ryn icon out of the box, overridable per app
 
+## Why not an existing framework?
+
+Before building Ryn I went through the existing options for desktop .NET with a web frontend. Each is good at what it does, but none gave me what I wanted — Tauri's ergonomics (native webviews, tiny binaries, a real plugin/capability model, a scaffolding CLI) **without leaving C#**:
+
+- **[Tauri](https://tauri.app/)** — the inspiration, and excellent. But the backend is Rust. Ryn exists precisely so a .NET team can have the Tauri experience without rewriting their backend in another language.
+- **[Photino](https://www.tryphotino.io/)** — the closest .NET option: a thin wrapper over the same native webviews. But it's deliberately minimal — no plugin system, no capability-based security, no IPC source generator, no CLI or project scaffolding. Ryn is the batteries-included layer that idea was missing.
+- **[Electron.NET](https://github.com/ElectronNET/Electron.NET) / [CefSharp](https://github.com/cefsharp/CefSharp)** — both bundle Chromium, so apps start at ~100 MB+ and can't NativeAOT. Ryn uses the OS's own webview (WebView2 / WKWebView / WebKitGTK) and ships ~4 MB self-contained AOT binaries.
+- **.NET MAUI Blazor Hybrid** — Microsoft's official answer, but it drags in the whole MAUI stack and a XAML host shell. It's heavy, mobile-first, and you don't get a plain "bring your own HTML/CSS/JS" frontend. Ryn is desktop-only and an order of magnitude lighter.
+- **[Avalonia](https://avaloniaui.net/) / [Uno Platform](https://platform.uno/)** — both are great, but they're XAML frameworks that render their own controls, not hosts for the web platform. If you want to use HTML/CSS/JS and the front-end ecosystem you already know, they're a different paradigm entirely.
+
+None of them gave me Tauri-style ergonomics on a native webview, with NativeAOT and a real security model, in C# — so I built Ryn.
+
 ## Status
 
-**Alpha.** Ryn runs in production on **macOS** and **Windows** — Windows is verified by the Primal launcher, a real desktop app shipping on Ryn. **Linux is the one platform whose GUI paths are not yet verified end-to-end** (it builds and unit-tests in CI; the window/tray/dialog code is written but unproven on a real desktop). Treat Linux as experimental.
+**Alpha.** Ryn runs on **macOS** and **Windows**, both verified end-to-end on real desktop apps. **Linux is the one platform whose GUI paths are not yet verified end-to-end** (it builds and unit-tests in CI; the window/tray/dialog code is written but unproven on a real desktop). Treat Linux as experimental.
 
 ### Platform support matrix
 
@@ -291,6 +307,14 @@ docs/
 - [Plugin Authoring](docs/plugin-authoring.md) — Creating Ryn plugins with commands, options, DI, events
 - [Vite Integration](docs/vite-integration.md) — Using Vite + TypeScript with Ryn
 
+## Author
+
+Ryn is designed, built, and maintained by **[Moh](https://github.com/Yupmoh)** — it started as a one-person effort to bring the Tauri developer experience to .NET, and it's still primarily solo-maintained. If Ryn is useful to you, a ⭐ on the repo genuinely helps. Contributions are welcome too — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Acknowledgements
+
+Ryn builds on [**saucer**](https://github.com/saucer/saucer), the C++ webview library whose C bindings Ryn wraps for native window and webview management. Thanks also to the .NET, ClangSharp, and NativeAOT teams whose work makes a tiny, reflection-free desktop framework possible.
+
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) © [Moh](https://github.com/Yupmoh)
