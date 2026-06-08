@@ -5,112 +5,126 @@
 <title>Ryn File Manager</title>
 <style>
   :root {
-    --bg: #0a0a12; --surface: #12121f; --surface2: #1a1a2e;
-    --border: #2a2a4a; --text: #e0e0e8; --muted: #666680;
-    --accent: #7c3aed; --accent2: #a78bfa; --accent3: #c4b5fd;
-    --green: #22c55e; --red: #ef4444; --yellow: #eab308;
+    --bg: #0b0c12; --surface: #13141d; --surface2: #1b1c27; --surface3: #23232f;
+    --border: #262838; --border-soft: #1b1c26; --text: #e9e9f1; --text-dim: #b8bacb;
+    --muted: #6e7188; --accent: #e07b81; --accent-bright: #ef8d92; --accent-dim: #b9656b;
+    --accent-soft: rgba(224,123,129,0.13); --red: #f87171;
+    --mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height: 100%; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
-    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px;
     display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
   }
+
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2c2e3d; border-radius: 7px; border: 3px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3c4f; }
 
   /* Toolbar */
   .toolbar {
     display: flex; align-items: center; gap: 8px;
     background: var(--surface); border-bottom: 1px solid var(--border);
-    padding: 8px 16px; flex-shrink: 0;
+    flex-shrink: 0;
+    /* Overlay title bar: content is edge-to-edge, so pad past the traffic lights (left)
+       and below the title-bar strip (top). Ryn injects both insets at startup. */
+    padding:
+      calc(var(--ryn-titlebar-inset-top, 0px) + 9px)
+      14px
+      9px
+      calc(var(--ryn-titlebar-inset-left, 0px) + 14px);
+  }
+  .brand {
+    display: flex; align-items: center; gap: 8px; padding: 0 8px 0 2px;
+    font-weight: 650; font-size: 13px; color: var(--text); letter-spacing: 0.2px;
+    white-space: nowrap;
+  }
+  .brand .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
   }
   .toolbar .btn {
-    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
-    background: var(--surface2); color: var(--text); cursor: pointer;
-    font-size: 13px; font-weight: 500; transition: all 0.15s;
+    padding: 6px 12px; border-radius: 7px; border: 1px solid transparent;
+    background: var(--surface2); color: var(--text-dim); cursor: pointer;
+    font-size: 12.5px; font-weight: 550; transition: all 0.12s ease;
     display: flex; align-items: center; gap: 6px;
   }
-  .toolbar .btn:hover { background: #252540; border-color: var(--accent); }
+  .toolbar .btn:hover { background: var(--surface3); color: var(--text); border-color: #34364a; }
+  .toolbar .btn:active { transform: translateY(0.5px); }
 
   /* Breadcrumb */
   .breadcrumb {
-    display: flex; align-items: center; flex: 1;
-    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-    padding: 6px 12px; font-size: 13px; overflow-x: auto; white-space: nowrap;
-    gap: 4px;
+    display: flex; align-items: center; flex: 1; gap: 1px; height: 32px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
+    padding: 0 10px; font-size: 12.5px; overflow-x: auto; white-space: nowrap;
   }
-  .breadcrumb span { color: var(--muted); }
+  .breadcrumb::-webkit-scrollbar { height: 0; }
+  .breadcrumb span { color: var(--muted); padding: 0 1px; }
   .breadcrumb a {
-    color: var(--accent2); text-decoration: none; cursor: pointer;
-    padding: 2px 4px; border-radius: 4px;
+    color: var(--text-dim); text-decoration: none; cursor: pointer;
+    padding: 3px 6px; border-radius: 5px; transition: all 0.12s;
   }
-  .breadcrumb a:hover { background: var(--surface2); color: var(--accent3); }
+  .breadcrumb a:hover { background: var(--surface2); color: var(--accent-bright); }
 
   /* Main layout */
-  .main {
-    display: flex; flex: 1; overflow: hidden;
-  }
+  .main { display: flex; flex: 1; overflow: hidden; }
 
   /* File list */
-  .file-panel {
-    flex: 1; overflow-y: auto; padding: 0;
-  }
-  .file-table {
-    width: 100%; border-collapse: collapse;
-  }
-  .file-table thead {
-    position: sticky; top: 0; z-index: 1;
-    background: var(--surface);
-  }
+  .file-panel { flex: 1; overflow-y: auto; }
+  .file-table { width: 100%; border-collapse: collapse; }
+  .file-table thead { position: sticky; top: 0; z-index: 1; }
   .file-table th {
-    padding: 8px 16px; text-align: left; font-size: 11px; font-weight: 600;
-    color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--border);
+    padding: 9px 16px; text-align: left; font-size: 10.5px; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
   }
   .file-table td {
-    padding: 6px 16px; font-size: 13px;
-    border-bottom: 1px solid #16162a; cursor: default;
+    padding: 8px 16px; font-size: 13px; border-bottom: 1px solid var(--border-soft);
   }
-  .file-table tr:hover td { background: var(--surface2); }
-  .file-table tr.selected td { background: #1e1b4b; }
-  .file-row-icon { width: 32px; text-align: center; font-size: 16px; }
-  .file-row-name { font-weight: 500; }
-  .file-row-name.dir { color: var(--accent2); cursor: pointer; }
-  .file-row-size { color: var(--muted); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; width: 100px; text-align: right; }
-  .file-row-date { color: var(--muted); font-size: 12px; width: 160px; }
+  .file-table tbody tr { cursor: default; transition: background 0.08s; }
+  .file-table tbody tr:hover td { background: var(--surface); }
+  .file-table tr.selected td { background: var(--accent-soft); }
+  .file-table tr.selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+  .file-row-icon { width: 30px; text-align: center; font-size: 15px; opacity: 0.92; }
+  .file-row-name { font-weight: 500; color: var(--text); }
+  .file-row-name.dir { color: var(--accent-bright); cursor: pointer; font-weight: 550; }
+  .file-row-size { color: var(--muted); font-family: var(--mono); font-size: 11.5px; width: 100px; text-align: right; }
+  .file-row-date { color: var(--muted); font-size: 11.5px; width: 160px; }
 
   /* Preview panel */
   .preview-panel {
-    width: 380px; border-left: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    background: var(--surface); flex-shrink: 0;
+    width: 360px; border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; background: var(--surface); flex-shrink: 0;
   }
   .preview-panel.hidden { display: none; }
   .preview-header {
     padding: 12px 16px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; gap: 8px;
   }
   .preview-header h3 {
-    font-size: 13px; color: var(--accent2); font-weight: 600;
+    font-size: 13px; color: var(--text); font-weight: 600;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
   }
   .preview-close {
     background: none; border: none; color: var(--muted); cursor: pointer;
-    font-size: 18px; padding: 0 4px; line-height: 1;
+    font-size: 15px; padding: 2px 7px; line-height: 1; border-radius: 5px; transition: all 0.12s;
   }
-  .preview-close:hover { color: var(--text); }
+  .preview-close:hover { color: var(--text); background: var(--surface2); }
   .preview-meta {
-    padding: 12px 16px; border-bottom: 1px solid var(--border);
-    font-size: 12px; color: var(--muted);
+    padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 12px;
   }
-  .preview-meta table { width: 100%; }
-  .preview-meta td { padding: 3px 0; }
-  .preview-meta td:first-child { color: var(--muted); width: 80px; font-weight: 500; }
-  .preview-meta td:last-child { color: var(--accent3); font-family: 'SF Mono', monospace; word-break: break-all; }
+  .preview-meta table { width: 100%; border-collapse: collapse; }
+  .preview-meta td { padding: 4px 0; vertical-align: top; }
+  .preview-meta td:first-child { color: var(--muted); width: 72px; font-weight: 500; }
+  .preview-meta td:last-child { color: var(--text-dim); font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
   .preview-content {
-    flex: 1; overflow: auto; padding: 12px 16px;
-    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px;
-    line-height: 1.6; white-space: pre-wrap; word-break: break-all;
-    color: var(--text);
+    flex: 1; overflow: auto; padding: 14px 16px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.65;
+    white-space: pre-wrap; word-break: break-word; color: var(--text-dim);
   }
   .preview-placeholder {
     display: flex; align-items: center; justify-content: center;
@@ -119,29 +133,32 @@
 
   /* Status bar */
   .statusbar {
-    padding: 4px 16px; background: var(--surface); border-top: 1px solid var(--border);
+    padding: 6px 16px; background: var(--surface); border-top: 1px solid var(--border);
     font-size: 11px; color: var(--muted); flex-shrink: 0;
-    display: flex; justify-content: space-between;
+    display: flex; justify-content: space-between; align-items: center;
   }
+  .statusbar #statusRight { font-family: var(--mono); font-size: 10.5px; opacity: 0.85; }
 
   /* Loading & error states */
   .empty-state {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    height: 100%; color: var(--muted); gap: 8px; font-size: 13px;
+    padding: 64px 20px; color: var(--muted); gap: 10px; font-size: 13px; text-align: center;
   }
-  .empty-state .icon { font-size: 40px; opacity: 0.5; }
+  .empty-state .icon { font-size: 38px; opacity: 0.55; }
+  .empty-state strong { color: var(--text-dim); font-weight: 600; }
   .error-msg {
-    padding: 16px; margin: 16px; background: #1a0a0a; border: 1px solid #4a1a1a;
-    border-radius: 8px; color: var(--red); font-size: 13px;
+    padding: 14px 16px; margin: 16px; background: rgba(248,113,113,0.07);
+    border: 1px solid rgba(248,113,113,0.25); border-radius: 8px; color: var(--red); font-size: 12.5px;
   }
 
-  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
-  .loading { animation: pulse 1.5s ease-in-out infinite; color: var(--muted); padding: 24px; text-align: center; font-size: 13px; }
+  @keyframes pulse { 0%,100% { opacity:0.45; } 50% { opacity:0.9; } }
+  .loading { animation: pulse 1.4s ease-in-out infinite; color: var(--muted); padding: 28px; text-align: center; font-size: 13px; }
 </style>
 </head>
 <body>
 
 <div class="toolbar">
+  <div class="brand"><span class="dot"></span>Ryn Files</div>
   <button class="btn" onclick="goUp()" title="Go to parent directory">&#x2191; Up</button>
   <button class="btn" onclick="goHome()" title="Go to home directory">&#x2302; Home</button>
   <div class="breadcrumb" id="breadcrumb"></div>
@@ -367,10 +384,8 @@
   function init() {
     if (window.__ryn && window.__ryn.invoke) {
       isRynAvailable = true;
-      // Navigate to user home
-      homePath = '~';
-      // The filesystem plugin resolves ~ to home, but we can also try the profile path
-      // Start from home directory
+      // The host (Program.cs) injects the real home directory at startup.
+      homePath = '__RYN_HOME__';
       navigateTo(homePath);
     } else {
       document.getElementById('fileList').innerHTML =
