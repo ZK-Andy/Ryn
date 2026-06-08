@@ -1,0 +1,7 @@
+# Code owners for Ryn.
+# Every PR automatically requests a review from these owners, and — when
+# "Require review from Code Owners" is enabled in the branch ruleset — cannot
+# merge without their approval. See https://docs.github.com/articles/about-code-owners
+
+# Default owner for everything in the repo.
+* @Yupmoh
