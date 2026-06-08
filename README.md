@@ -15,7 +15,7 @@ Ryn gives .NET developers the Tauri experience without leaving C#. You write the
 
 - **C# backend, web frontend:** write the UI in HTML/CSS/JS and the backend in C#, wired together by `[RynCommand]` source-generated IPC.
 - **Lightweight:** uses the native OS webview (WebView2, WKWebView, WebKitGTK) instead of bundling Chromium.
-- **NativeAOT:** small, self-contained binaries (~4.3 MB) with no runtime dependency.
+- **NativeAOT:** small, self-contained binaries (~5 MB) with no runtime dependency.
 - **Cross-platform:** Windows, macOS, and Linux.
 - **Plugin system:** FileSystem, Dialog (native pickers), Clipboard, Shell (spawn/PTY streaming), Notification, Audio, Tray, and a signed Auto-updater.
 - **Security model:** `ryn.json` capability scopes, deny-by-default.

@@ -774,7 +774,7 @@ These are issues discovered during implementation that need to be addressed befo
 
 - [x] A developer can `ryn new myapp && ryn dev` and see an app in a native window
 - [x] Works on Windows (confirmed by user), macOS (confirmed), Linux (CI builds pass)
-- [x] NativeAOT binary under 20MB for a hello-world app (4.3MB achieved)
+- [x] NativeAOT binary under 20MB for a hello-world app (5.0MB achieved)
 - [ ] Cold start under 500ms
 - [ ] All benchmarks meet targets
 - [x] Zero known P1 bugs

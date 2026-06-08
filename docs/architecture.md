@@ -563,7 +563,7 @@ All projects pass trim analysis with zero warnings. The generator avoids emittin
 
 ### Binary size
 
-A hello-world Ryn app with NativeAOT produces a ~4.3 MB binary on macOS arm64. This includes the .NET runtime, the app, and the saucer native library.
+A hello-world Ryn app with NativeAOT produces a ~5.0 MB binary on macOS arm64 (a full app pulling in every plugin is ~5.6 MB). This includes the .NET runtime, the app, and the saucer native library.
 
 ## 9. Threading Model
 
